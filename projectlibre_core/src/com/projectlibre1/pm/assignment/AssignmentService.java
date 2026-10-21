@@ -64,6 +64,7 @@ import com.projectlibre1.association.AssociationList;
 import com.projectlibre1.configuration.Settings;
 import com.projectlibre1.datatype.TimeUnit;
 import com.projectlibre1.grouping.core.Node;
+import com.projectlibre1.options.TaskDefaultOption;
 import com.projectlibre1.pm.resource.Resource;
 import com.projectlibre1.pm.resource.ResourceImpl;
 import com.projectlibre1.pm.resource.ResourcePool;
@@ -91,6 +92,16 @@ public class AssignmentService {
 	}
 	
 	
+	/**
+	 * Assign using the default units of each resource (see TaskDefaultOption.getAssignmentUnits)
+	 */
+	public void newAssignmentsWithDefaultUnits(Collection tasks, Collection resources, long delay, Object eventSource,boolean undo) {
+		newAssignments(tasks,resources,Double.NaN,delay,eventSource,undo);
+	}
+
+	/**
+	 * @param units if NaN, the default units of each resource are used
+	 */
 	public void newAssignments(Collection tasks, Collection resources, double units, long delay, Object eventSource,boolean undo) {
 		if (tasks.size()==0||resources.size()==0) return;
 		int transactionId = 0;
@@ -108,8 +119,10 @@ public class AssignmentService {
 				transactionProject.getUndoController().getEditSupport().postEdit(new ScheduleBackupEdit(tasks,this));
 			}
 			// if task currently has no assignments, then we should not change duration if adding several at once
-			boolean taskHasNoAssignments = !task.hasRealAssignments() || !task.hasLaborAssignment();
+			// except for fixed work tasks, where the work is kept and the duration is recalculated
 			int oldSchedulingType = task.getSchedulingType();
+			boolean taskHasNoAssignments = (!task.hasRealAssignments() || !task.hasLaborAssignment())
+					&& oldSchedulingType != SchedulingType.FIXED_WORK;
 			boolean oldEffortDriven = task.isEffortDriven();
 			if (taskHasNoAssignments) {// if adding for first time
 				task.setSchedulingType(SchedulingType.FIXED_DURATION);
@@ -127,7 +140,8 @@ public class AssignmentService {
 //Perhaps one solution would be to replace hierarchy search() with a hash table for mapping impls to nodes
 
 //TODO It throws an event for assignment. A service for updating all the assignments at once should be added.
-					Assignment assignment = newAssignment(task,resource,units,0,eventSource,true);
+					double resourceUnits = Double.isNaN(units) ? TaskDefaultOption.getInstance().getAssignmentUnits(resource) : units;
+					Assignment assignment = newAssignment(task,resource,resourceUnits,0,eventSource,true);
 					if (!resource.isLabor()) // for assigning non temporal resources, use the value of 1
 						assignment.setRateUnit(TimeUnit.NON_TEMPORAL);
 				}

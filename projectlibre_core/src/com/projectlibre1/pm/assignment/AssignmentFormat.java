@@ -71,7 +71,9 @@ import com.projectlibre1.datatype.RateFormat;
 import com.projectlibre1.datatype.TimeUnit;
 import com.projectlibre1.field.FieldParseException;
 import com.projectlibre1.options.GeneralOption;
+import com.projectlibre1.options.TaskDefaultOption;
 import com.projectlibre1.pm.resource.Resource;
+import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Task;
 import com.projectlibre1.strings.Messages;
 
@@ -158,6 +160,11 @@ public class AssignmentFormat extends AssociationFormat {
 //			percent = percentNumber.doubleValue();
 		} else if (resource.isMaterial()) {
 			rate = new Rate(1,TimeUnit.NON_TEMPORAL);
+		} else {
+			// no units entered: keep units of an existing assignment, otherwise use the default units for the resource
+			Object task = parameters.isLeftAssociation() ? parameters.getThisObject() : found;
+			Assignment existing = (task instanceof NormalTask) ? ((NormalTask)task).findAssignment(resource) : null;
+			percent = (existing != null) ? existing.getUnits() : TaskDefaultOption.getInstance().getAssignmentUnits(resource);
 		}
 		Assignment ass = Assignment.getInstance((Task) (parameters.isLeftAssociation() ? parameters.getThisObject() : found),
 										resource,

@@ -447,6 +447,10 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 				&& assignment.isInitialized() && assignment.isLabor();
 		Assignment defaultAssignment = findAssignment(ResourceImpl
 				.getUnassignedInstance());
+		// fixed work: the first real assignment keeps the task's work, so the duration follows the units
+		boolean keepWork = recalculateDuration && defaultAssignment != null
+				&& getSchedulingType() == SchedulingType.FIXED_WORK;
+		long workBefore = keepWork ? getWork(null) : 0;
 
 		if (!assignment.isDefault()) {
 			// get rid of any default
@@ -477,6 +481,9 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 
 		if (!assignment.isInitialized()) // if reading in, then don't recalc duration
 			return;
+
+		if (keepWork && workBefore > 0)
+			setWork(workBefore);
 
 		// if effort driven then set duration
 		if (recalculateDuration && isEffortDriven()) {

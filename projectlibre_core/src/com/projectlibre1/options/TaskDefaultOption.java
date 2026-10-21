@@ -57,15 +57,17 @@ package com.projectlibre1.options;
 
 import java.util.prefs.Preferences;
 
+import com.projectlibre1.pm.resource.Resource;
 import com.projectlibre1.pm.scheduling.SchedulingType;
 import com.projectlibre1.pm.task.NormalTask;
 
 /**
- * Default values applied to tasks created by the user (not to tasks read from files).
+ * Default values applied to tasks and assignments created by the user (not to those read from files).
  * Values are persisted in the user preferences.
  */
 public class TaskDefaultOption {
 	private static final String SCHEDULING_TYPE_KEY = "taskDefault.schedulingType";
+	private static final String ASSIGN_MAX_UNITS_KEY = "taskDefault.assignMaxUnits";
 	private static TaskDefaultOption instance = null;
 
 	public static TaskDefaultOption getInstance() {
@@ -75,6 +77,7 @@ public class TaskDefaultOption {
 	}
 
 	int schedulingType = SchedulingType.FIXED_WORK;
+	boolean assignMaxUnits = true;
 
 	private TaskDefaultOption() {
 		load();
@@ -95,6 +98,27 @@ public class TaskDefaultOption {
 		task.setSchedulingType(schedulingType);
 	}
 
+	public boolean isAssignMaxUnits() {
+		return assignMaxUnits;
+	}
+
+	public void setAssignMaxUnits(boolean assignMaxUnits) {
+		this.assignMaxUnits = assignMaxUnits;
+	}
+
+	/**
+	 * Units used when the user assigns a resource without entering units:
+	 * the resource's max units for work resources if enabled, otherwise 100%
+	 */
+	public double getAssignmentUnits(Resource resource) {
+		if (assignMaxUnits && resource != null && resource.isLabor()) {
+			double maxUnits = resource.getMaximumUnits();
+			if (maxUnits > 0)
+				return maxUnits;
+		}
+		return 1.0D;
+	}
+
 	private static Preferences getPreferences() {
 		return Preferences.userNodeForPackage(TaskDefaultOption.class);
 	}
@@ -104,6 +128,7 @@ public class TaskDefaultOption {
 			int value = getPreferences().getInt(SCHEDULING_TYPE_KEY, schedulingType);
 			if (value == SchedulingType.FIXED_UNITS || value == SchedulingType.FIXED_DURATION || value == SchedulingType.FIXED_WORK)
 				schedulingType = value;
+			assignMaxUnits = getPreferences().getBoolean(ASSIGN_MAX_UNITS_KEY, assignMaxUnits);
 		} catch (Exception e) { // preferences not available, keep defaults
 		}
 	}
@@ -111,6 +136,7 @@ public class TaskDefaultOption {
 	public void save() {
 		try {
 			getPreferences().putInt(SCHEDULING_TYPE_KEY, schedulingType);
+			getPreferences().putBoolean(ASSIGN_MAX_UNITS_KEY, assignMaxUnits);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

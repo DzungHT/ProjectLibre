@@ -55,6 +55,7 @@
  *******************************************************************************/
 package com.projectlibre1.dialog;
 
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -77,6 +78,7 @@ public final class TaskDefaultSettingsDialog extends AbstractDialog {
 			"SchedulingType.FixedUnits", "SchedulingType.FixedDuration", "SchedulingType.FixedWork" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 
 	JComboBox schedulingType;
+	JCheckBox assignMaxUnits;
 
 	public static boolean doDialog() {
 		return new TaskDefaultSettingsDialog().doModal();
@@ -88,6 +90,7 @@ public final class TaskDefaultSettingsDialog extends AbstractDialog {
 		for (int i = 0; i < labels.length; i++)
 			labels[i] = Messages.getString(SCHEDULING_TYPE_KEYS[i]);
 		schedulingType = new JComboBox(labels);
+		assignMaxUnits = new JCheckBox(Messages.getString("TaskDefaultSettingsDialog.AssignMaxUnits")); //$NON-NLS-1$
 	}
 
 	protected boolean bind(boolean get) {
@@ -96,8 +99,10 @@ public final class TaskDefaultSettingsDialog extends AbstractDialog {
 			for (int i = 0; i < SCHEDULING_TYPES.length; i++)
 				if (SCHEDULING_TYPES[i] == option.getSchedulingType())
 					schedulingType.setSelectedIndex(i);
+			assignMaxUnits.setSelected(option.isAssignMaxUnits());
 		} else {
 			option.setSchedulingType(SCHEDULING_TYPES[schedulingType.getSelectedIndex()]);
+			option.setAssignMaxUnits(assignMaxUnits.isSelected());
 			option.save();
 		}
 		return true;
@@ -106,12 +111,14 @@ public final class TaskDefaultSettingsDialog extends AbstractDialog {
 	public JComponent createContentPanel() {
 		bind(true);
 		FormLayout layout = new FormLayout("default, 3dlu, 120dlu:grow", // cols //$NON-NLS-1$
-				"p, 6dlu, p"); // rows //$NON-NLS-1$
+				"p, 6dlu, p, 3dlu, p"); // rows //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		builder.append(new JLabel(Messages.getString("TaskDefaultSettingsDialog.Description")), 3); //$NON-NLS-1$
 		builder.nextLine(2);
 		builder.append(Messages.getString("Field.taskType"), schedulingType); //$NON-NLS-1$
+		builder.nextLine(2);
+		builder.append(assignMaxUnits, 3);
 		return builder.getPanel();
 	}
 }
