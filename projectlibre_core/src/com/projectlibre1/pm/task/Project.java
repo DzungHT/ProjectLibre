@@ -114,6 +114,7 @@ import com.projectlibre1.grouping.core.model.NodeModelDataFactory;
 import com.projectlibre1.grouping.core.model.NodeModelFactory;
 import com.projectlibre1.grouping.core.transform.filtering.NotAssignmentFilter;
 import com.projectlibre1.options.CalendarOption;
+import com.projectlibre1.options.TaskDefaultOption;
 import com.projectlibre1.options.TimesheetOption;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.assignment.HasTimeDistributedData;
@@ -421,8 +422,10 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 		add(newOne);
 		initializeId(newOne);
 
-		if (userCreated)
+		if (userCreated) {
+			TaskDefaultOption.getInstance().applyTo(newOne);
 			objectEventManager.fireCreateEvent(this,newOne);
+		}
 		return newOne;
 	}
 
@@ -481,6 +484,7 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 
 		newOne.getCurrentSchedule().setStart(getWorkCalendar().adjustInsideCalendar(newOne.getCurrentSchedule().getStart(),false));
 		initializeId(newOne);
+		TaskDefaultOption.getInstance().applyTo(newOne);
 //		newOne.initializeDates();
 		return newOne;
 	}

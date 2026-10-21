@@ -136,6 +136,7 @@ import com.projectlibre1.contrib.ClassLoaderUtils;
 import com.projectlibre1.dialog.AboutDialog;
 import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
+import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.FindDialog;
 import com.projectlibre1.dialog.HelpDialog;
 import com.projectlibre1.dialog.LocaleDialog;
@@ -1020,6 +1021,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_DELEGATE_TASKS, new DelegateTasksAction());
 		actionsMap.addHandler(ACTION_UPDATE_TASKS, new UpdateTasksAction());
 		actionsMap.addHandler(ACTION_UPDATE_PROJECT, new UpdateProjectAction());
+		actionsMap.addHandler(ACTION_TASK_DEFAULT_SETTINGS, new TaskDefaultSettingsAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1537,6 +1539,13 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	public class TaskDefaultSettingsAction extends MenuActionsMap.GlobalMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			TaskDefaultSettingsDialog.doDialog();
 		}
 	}
 
