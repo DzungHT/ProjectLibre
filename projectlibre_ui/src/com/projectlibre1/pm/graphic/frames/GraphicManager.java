@@ -60,6 +60,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
+import java.awt.event.InputEvent;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.event.KeyEvent;
@@ -2664,6 +2665,11 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 		    addCtrlAccel(KeyEvent.VK_I, ACTION_INSERT_TASK, null);
 		    addCtrlAccel(KeyEvent.VK_PERIOD, ACTION_INDENT, null);
 		    addCtrlAccel(KeyEvent.VK_COMMA, ACTION_OUTDENT, null);
+		    // MS Project shortcuts
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), ACTION_INDENT, null);
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), ACTION_OUTDENT, null);
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_F2, InputEvent.CTRL_DOWN_MASK), ACTION_LINK, null);
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_F2, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), ACTION_UNLINK, null);
 		    addCtrlAccel(KeyEvent.VK_PLUS, ACTION_EXPAND, new ExpandAction());
 		    addCtrlAccel(KeyEvent.VK_ADD, ACTION_EXPAND, new ExpandAction());
 		    addCtrlAccel(KeyEvent.VK_EQUALS, ACTION_EXPAND, new ExpandAction());
@@ -2675,10 +2681,13 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
     }
 
     private void addCtrlAccel(int vk, String actionConstant, Action action) {
+		KeyStroke key = KeyStroke.getKeyStroke(vk, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()); //claur use getMenuShortcutKeyMask so it work on Mac too.
+		addAccel(key, actionConstant, action);
+	}
+
+    private void addAccel(KeyStroke key, String actionConstant, Action action) {
 		RootPaneContainer root = (RootPaneContainer)container;
 		InputMap inputMap = root.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-
-		KeyStroke key = KeyStroke.getKeyStroke(vk, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()); //claur use getMenuShortcutKeyMask so it work on Mac too.
 		inputMap.put(key, actionConstant);
 		if (action == null)
 			action = menuManager.getActionFromId(actionConstant);
