@@ -262,6 +262,10 @@ public class ViewNodeModelCache implements NodeModelCache, ViewTransformerListen
         reference.changeCollapsedState(node);
     }
 
+    public void expandOneLevel(boolean expand) {
+        reference.expandOneLevel(expand);
+    }
+
 
     public void createDependency(GraphicNode startNode, GraphicNode endNode)
             throws InvalidAssociationException {

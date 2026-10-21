@@ -508,6 +508,13 @@ public class DocumentFrame extends NamedFrame implements
 		if (ss !=null)
 			ss.executeAction(MenuActionConstants.ACTION_COLLAPSE);
 	}
+	public void doExpandLevel(boolean expand) {
+		SpreadSheet ss = getActiveSpreadSheet();
+		if (ss == null || ss.getCache() == null)
+			return;
+		ss.finishCurrentOperations();
+		ss.getCache().expandOneLevel(expand);
+	}
 
 	public void doIndent() {
 		SpreadSheet ss = getActiveSpreadSheet();

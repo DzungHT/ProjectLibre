@@ -164,6 +164,8 @@ public interface MenuActionConstants {
 	public static final String ACTION_EXPAND                = "Expand";
 	public static final String ACTION_COLLAPSE                = "Collapse";
 	public static final String ACTION_HIDE_ASSIGNMENTS        = "HideAssignments";
+	public static final String ACTION_EXPAND_LEVEL            = "ExpandLevel";
+	public static final String ACTION_COLLAPSE_LEVEL          = "CollapseLevel";
 	public static final String ACTION_HIDE_OUTLINE_SYMBOLS    = "HideOutlineSymbols";
 
 	public static final String ACTION_ALL_CHILDREN            = "AllChildren";

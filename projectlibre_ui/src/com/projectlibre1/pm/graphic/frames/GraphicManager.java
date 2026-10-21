@@ -1044,6 +1044,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 
 		actionsMap.addHandler(ACTION_CUT, new CutAction());
 		actionsMap.addHandler(ACTION_COPY, new CopyAction());
+		actionsMap.addHandler(ACTION_EXPAND_LEVEL, new ExpandLevelAction(true));
+		actionsMap.addHandler(ACTION_COLLAPSE_LEVEL, new ExpandLevelAction(false));
 		actionsMap.addHandler(ACTION_PASTE, new PasteAction());
 		actionsMap.addHandler(ACTION_DELETE, new DeleteAction());
 
@@ -1721,6 +1723,19 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 	}
 	public class CutAction extends MenuActionsMap.DocumentMenuAction {
 		private static final long serialVersionUID = 1L;
+	// whole outline, one level per click
+	public class ExpandLevelAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final boolean expand;
+		public ExpandLevelAction(boolean expand) {
+			this.expand = expand;
+		}
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive())
+				getCurrentFrame().doExpandLevel(expand);
+		}
+	}
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			if (isDocumentActive()){

@@ -112,6 +112,7 @@ public interface NodeModelCache extends TreeModel{
 	
 	public void changeCollapsedState(GraphicNode node);
 	public void expandNodes(List nodes, boolean expand);
+	public void expandOneLevel(boolean expand);
 	
 	public void newNode(GraphicNode node);
 	
