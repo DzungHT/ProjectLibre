@@ -57,8 +57,6 @@ package com.projectlibre1.pm.graphic;
 
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.beans.PropertyChangeListener;
 
 import javax.swing.Action;
@@ -73,7 +71,6 @@ import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.Keymap;
 
-import com.projectlibre1.pm.graphic.frames.GraphicManager;
 
 /**
  * 
@@ -92,12 +89,7 @@ public class ChangeAwareTextField extends JFormattedTextField implements Documen
 		super();
 		getDocument().addDocumentListener(this);
 		addCaretListener(this);
-		addMouseListener(new MouseAdapter() {
-			public void mousePressed(MouseEvent e) {
-				if (e.getClickCount() == 2)
-					GraphicManager.getInstance(ChangeAwareTextField.this).doInformationDialog(false);
-			}
-		});
+		// no double click handling here: in the spreadsheet a double click starts editing
     	Keymap keymap = getKeymap();
         KeyStroke key = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0, false);
         //keymap.removeKeyStrokeBinding(keystroke);
