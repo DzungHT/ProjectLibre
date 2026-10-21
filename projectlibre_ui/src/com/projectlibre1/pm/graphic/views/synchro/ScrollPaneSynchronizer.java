@@ -57,8 +57,11 @@ package com.projectlibre1.pm.graphic.views.synchro;
 
 import java.awt.Dimension;
 import java.awt.Point;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 
 import javax.swing.JComponent;
+import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JViewport;
@@ -80,6 +83,8 @@ public class ScrollPaneSynchronizer {
 	protected int orientation;
 
 	protected ChangeListener listener = null;
+
+	protected MouseWheelListener wheelListener = null;
 
 	protected int defaultScrollBarPolicy1;
 
@@ -161,6 +166,23 @@ public class ScrollPaneSynchronizer {
 					}
 				});
 
+				// scrollPane1 has no vertical bar, so Swing's default wheel handling scrolls it horizontally.
+				// Wheel scrolls rows on both panes, Shift+wheel scrolls the pane under the mouse horizontally.
+				wheelListener = new MouseWheelListener() {
+					public void mouseWheelMoved(MouseWheelEvent e) {
+						if (e.isControlDown() || e.isAltDown() || e.isMetaDown())
+							return;
+						JScrollPane source = (e.getSource() == scrollPane1) ? scrollPane1 : scrollPane2;
+						JScrollBar bar = e.isShiftDown() ? source.getHorizontalScrollBar() : scrollPane2.getVerticalScrollBar();
+						if (scrollBar(bar, e))
+							e.consume();
+					}
+				};
+				scrollPane1.setWheelScrollingEnabled(false);
+				scrollPane2.setWheelScrollingEnabled(false);
+				scrollPane1.addMouseWheelListener(wheelListener);
+				scrollPane2.addMouseWheelListener(wheelListener);
+
 			} else if (orientation == VERTICAL) {
 				defaultScrollBarPolicy1 = scrollPane1
 						.getHorizontalScrollBarPolicy();
@@ -199,7 +221,30 @@ public class ScrollPaneSynchronizer {
 		}
 	}
 
+	protected static boolean scrollBar(JScrollBar bar, MouseWheelEvent e) {
+		if (bar == null || !bar.isVisible())
+			return false;
+		double rotation = e.getPreciseWheelRotation();
+		int direction = rotation < 0 ? -1 : 1;
+		double increment = (e.getScrollType() == MouseWheelEvent.WHEEL_BLOCK_SCROLL)
+				? bar.getBlockIncrement(direction)
+				: e.getScrollAmount() * bar.getUnitIncrement(direction);
+		int delta = (int) Math.round(rotation * increment);
+		if (delta == 0)
+			delta = direction;
+		int max = bar.getMaximum() - bar.getVisibleAmount();
+		bar.setValue(Math.max(bar.getMinimum(), Math.min(max, bar.getValue() + delta)));
+		return true;
+	}
+
 	public void deactivateSynchro() {
+		if (wheelListener != null) {
+			scrollPane1.removeMouseWheelListener(wheelListener);
+			scrollPane2.removeMouseWheelListener(wheelListener);
+			scrollPane1.setWheelScrollingEnabled(true);
+			scrollPane2.setWheelScrollingEnabled(true);
+			wheelListener = null;
+		}
 		if (listener != null) {
 			scrollPane2.getViewport().removeChangeListener(listener);
 			if (orientation == HORIZONTAL) {

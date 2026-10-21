@@ -56,6 +56,8 @@
 package com.projectlibre1.pm.graphic.views;
 
 import java.awt.Dimension;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -245,6 +247,20 @@ public class GanttView extends SplittedView implements BaseView, ScheduleEventLi
 		gantt.setCache(cache);
 		gantt.setBarStyles((BarStyles) Dictionary.get(BarStyles.category,"standard"));
 		ganttScrollPane=new ScaledScrollPane(gantt,coord,documentFrame,spreadSheet.getRowHeight());
+		// Ctrl+wheel zooms the timescale
+		ganttScrollPane.addMouseWheelListener(new MouseWheelListener() {
+			public void mouseWheelMoved(MouseWheelEvent e) {
+				if (!e.isControlDown() || e.getWheelRotation() == 0 || coord == null)
+					return;
+				if (e.getWheelRotation() < 0)
+					zoomIn();
+				else
+					zoomOut();
+				if (documentFrame != null)
+					documentFrame.getGraphicManager().setZoomButtons();
+				e.consume();
+			}
+		});
 		return ganttScrollPane;
     }
 
