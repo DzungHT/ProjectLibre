@@ -76,6 +76,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.InvocationTargetException;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -104,6 +105,8 @@ import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JTabbedPane;
@@ -139,6 +142,8 @@ import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
+import com.projectlibre1.dialog.ExportWbsExcelDialog;
+import com.projectlibre1.dialog.ImportWbsExcelDialog;
 import com.projectlibre1.dialog.FindDialog;
 import com.projectlibre1.dialog.HelpDialog;
 import com.projectlibre1.dialog.LocaleDialog;
@@ -158,6 +163,7 @@ import com.projectlibre1.document.ObjectEvent;
 import com.projectlibre1.exchange.ResourceMappingForm;
 import com.projectlibre1.exchange.ulnl.UlnlWbsImporter;
 import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
+import com.projectlibre1.exchange.wbsexcel.WbsExcelExporter;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.SpreadSheetFieldArray;
 import com.projectlibre1.grouping.core.Node;
@@ -1027,6 +1033,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_UPDATE_PROJECT, new UpdateProjectAction());
 		actionsMap.addHandler(ACTION_TASK_DEFAULT_SETTINGS, new TaskDefaultSettingsAction());
 		actionsMap.addHandler(ACTION_IMPORT_ULNL, new ImportUlnlAction());
+		actionsMap.addHandler(ACTION_EXPORT_WBS_EXCEL, new ExportWbsExcelAction());
+		actionsMap.addHandler(ACTION_IMPORT_WBS_EXCEL, new ImportWbsExcelAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1553,6 +1561,67 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			TaskDefaultSettingsDialog.doDialog();
+		}
+	}
+	public class ExportWbsExcelAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			Project project = getCurrentFrame().getProject();
+			List<Field> displayed = WbsExcelExporter.exportableFields(getCurrentFrame().getGanttView().getSpreadSheet().getFieldArray());
+			ExportWbsExcelDialog.Result result = ExportWbsExcelDialog.doDialog(displayed, WbsExcelExporter.getAllTaskFields(), project.getName());
+			if (result == null)
+				return;
+			Frame f = getFrameInstance();
+			Cursor cur = f.getCursor();
+			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+			try {
+				WbsExcelExporter.export(project, result.fields, result.file);
+			} catch (IOException e) {
+				f.setCursor(cur);
+				Alert.error(MessageFormat.format(Messages.getString("ExportWbsExcelDialog.WriteError"), result.file.getName(), e.getMessage())); //$NON-NLS-1$
+				return;
+			} finally {
+				f.setCursor(cur);
+			}
+			JOptionPane.showMessageDialog(f, MessageFormat.format(Messages.getString("ExportWbsExcelDialog.Done"), result.file.getAbsolutePath()), //$NON-NLS-1$
+					Messages.getString("ExportWbsExcelDialog.Title"), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
+		}
+	}
+	public class ImportWbsExcelAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			ImportWbsExcelDialog.Result result = ImportWbsExcelDialog.doDialog(getCurrentFrame().getProject());
+			if (result == null)
+				return;
+			Frame f = getFrameInstance();
+			Cursor cur = f.getCursor();
+			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+			List<String> errors;
+			try {
+				errors = result.importer.apply(result.deleteMissing);
+			} finally {
+				f.setCursor(cur);
+			}
+			if (errors.isEmpty())
+				return;
+			StringBuilder b = new StringBuilder();
+			for (String error : errors)
+				b.append(error).append('\n');
+			JTextArea text = new JTextArea(b.toString(), 12, 60);
+			text.setEditable(false);
+			text.setCaretPosition(0);
+			JOptionPane.showMessageDialog(f, new Object[] {MessageFormat.format(Messages.getString("ImportWbsExcelDialog.Errors"), String.valueOf(errors.size())), new JScrollPane(text)}, //$NON-NLS-1$
+					Messages.getString("ImportWbsExcelDialog.Title"), JOptionPane.WARNING_MESSAGE); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
 		}
 	}
 	public class ImportUlnlAction extends MenuActionsMap.DocumentMenuAction {

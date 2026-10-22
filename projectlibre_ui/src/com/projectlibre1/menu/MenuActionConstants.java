@@ -144,6 +144,8 @@ public interface MenuActionConstants {
 	public static final String ACTION_UPDATE_PROJECT          = "UpdateProject";
 	public static final String ACTION_TASK_DEFAULT_SETTINGS   = "TaskDefaultSettings";
 	public static final String ACTION_IMPORT_ULNL             = "ImportUlnl";
+	public static final String ACTION_EXPORT_WBS_EXCEL        = "ExportWbsExcel";
+	public static final String ACTION_IMPORT_WBS_EXCEL        = "ImportWbsExcel";
 	public static final String ACTION_SAVE_BASELINE           = "SaveBaseline";
 	public static final String ACTION_CLEAR_BASELINE          = "ClearBaseline";
 	public static final String ACTION_LOCALE		          = "LocaleAction";
