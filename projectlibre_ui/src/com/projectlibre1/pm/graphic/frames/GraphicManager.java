@@ -1748,8 +1748,6 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			return isDocumentWritable();
 		}
 	}
-	public class CutAction extends MenuActionsMap.DocumentMenuAction {
-		private static final long serialVersionUID = 1L;
 	// whole outline, one level per click
 	public class ExpandLevelAction extends MenuActionsMap.DocumentMenuAction {
 		private static final long serialVersionUID = 1L;
@@ -1763,6 +1761,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 				getCurrentFrame().doExpandLevel(expand);
 		}
 	}
+	public class CutAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			if (isDocumentActive()){
