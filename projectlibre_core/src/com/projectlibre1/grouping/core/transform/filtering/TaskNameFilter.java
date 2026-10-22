@@ -64,6 +64,7 @@ import com.projectlibre1.pm.task.Task;
 
 /**
  * Keeps tasks whose name contains (or equals) the text entered by the user, ignoring case and accents.
+ * When a parent name is given, only tasks under a summary whose name contains it are kept.
  * When parents are shown, summaries of matching tasks are kept by the view (preserveHierarchy),
  * otherwise the view shows only the matching leaf tasks as a flat list.
  */
@@ -71,10 +72,13 @@ public class TaskNameFilter extends NodeFilter {
 	public static final String NAME_PARAMETER="TransformParameter.Name";
 	public static final String EXACT_MATCH_PARAMETER="TransformParameter.ExactMatch";
 	public static final String SHOW_PARENTS_PARAMETER="TransformParameter.ShowParents";
+	public static final String PARENT_NAME_PARAMETER="TransformParameter.ParentName";
 	private static final Pattern MARKS=Pattern.compile("\\p{M}+");
 
 	private String lastValue;
 	private String keyword;
+	private String lastParentValue;
+	private String parentKeyword;
 
 	public TaskNameFilter(String arg) {
 		super();
@@ -82,13 +86,25 @@ public class TaskNameFilter extends NodeFilter {
 
 	public boolean evaluate(Object obj) {
 		String text=getKeyword();
-		if (text==null) return true;
+		String parentText=getParentKeyword();
+		if (text==null&&parentText==null) return true;
 		Object impl=(obj instanceof Node)?((Node)obj).getImpl():obj;
 		if (!(impl instanceof Task)) return false;
-		String name=((Task)impl).getName();
+		Task task=(Task)impl;
+		if (parentText!=null&&!hasParentNamed(task,parentText)) return false;
+		if (text==null) return true;
+		String name=task.getName();
 		if (name==null) return false;
 		name=normalize(name.trim());
 		return isExactMatch()?name.equals(text):name.contains(text);
+	}
+
+	private static boolean hasParentNamed(Task task,String parentText) {
+		for (Task parent=task.getWbsParentTask();parent!=null;parent=parent.getWbsParentTask()){
+			String name=parent.getName();
+			if (name!=null&&normalize(name.trim()).contains(parentText)) return true;
+		}
+		return false;
 	}
 
 	public boolean isExactMatch() {
@@ -98,7 +114,7 @@ public class TaskNameFilter extends NodeFilter {
 		return TransformParameter.toBoolean(getParameter(SHOW_PARENTS_PARAMETER),true);
 	}
 	public boolean isLeavesOnly() {
-		return !isShowParents()&&getKeyword()!=null;
+		return !isShowParents()&&(getKeyword()!=null||getParentKeyword()!=null);
 	}
 
 	private String getKeyword() {
@@ -110,6 +126,17 @@ public class TaskNameFilter extends NodeFilter {
 			keyword=normalize(s);
 		}
 		return keyword;
+	}
+
+	private String getParentKeyword() {
+		Object value=getParameter(PARENT_NAME_PARAMETER);
+		String s=(value==null)?null:value.toString().trim();
+		if (s==null||s.length()==0) return null;
+		if (!s.equals(lastParentValue)){
+			lastParentValue=s;
+			parentKeyword=normalize(s);
+		}
+		return parentKeyword;
 	}
 
 	public static String normalize(String s) {

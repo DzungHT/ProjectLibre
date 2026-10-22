@@ -1193,6 +1193,7 @@
 			<filter id="Filter.None"/>
 			<filter id="Filter.TaskName" definition="com.projectlibre1.grouping.core.transform.filtering.TaskNameFilter" type="task">
 				<param id="TransformParameter.Name" type="string"/>
+				<param id="TransformParameter.ParentName" type="string"/>
 				<param id="TransformParameter.ExactMatch" type="boolean" value="false"/>
 				<param id="TransformParameter.ShowParents" type="boolean" value="true"/>
 			</filter>
