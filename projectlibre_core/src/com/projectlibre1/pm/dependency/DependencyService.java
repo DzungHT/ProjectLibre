@@ -58,8 +58,11 @@ package com.projectlibre1.pm.dependency;
 import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import javax.swing.SwingUtilities;
 import javax.swing.undo.UndoableEdit;
@@ -227,11 +230,25 @@ public class DependencyService {
 	 */
 	public void connect(List tasks, Object eventSource, Predicate canBeSuccessorCondition) throws InvalidAssociationException {
 		ArrayList newDependencies = new ArrayList();
+		prepareLinks(tasks, canBeSuccessorCondition, 0, tasks.size(), newDependencies);
+		Iterator d = newDependencies.iterator();
+		while (d.hasNext()) {
+			connect((Dependency)d.next(),eventSource);
+		}
+
+
+	}
+	/**
+	 * Validation part of connect(List...) for the rows fromRow to toRow (exclusive) of tasks, so that a long
+	 * link can be done in slices. The sequential dependencies to create are added to newDependencies, nothing is connected.
+	 * @throws InvalidAssociationException if a link would be circular or to a summary
+	 */
+	public void prepareLinks(List tasks, Predicate canBeSuccessorCondition, int fromRow, int toRow, List newDependencies) throws InvalidAssociationException {
 		// try making new dependencies between all items earlier to all items later, thereby checking all possible circularities
 		HasDependencies pred;
 		HasDependencies succ;
 		Object temp;
-		for (int i = 0; i < tasks.size()-1; i++) {
+		for (int i = fromRow; i < Math.min(toRow, tasks.size()-1); i++) {
 			temp = tasks.get(i);
 			if (!(temp instanceof HasDependencies))
 				continue;
@@ -253,12 +270,6 @@ public class DependencyService {
 					newDependencies.add(test);
 			}
 		}
-		Iterator d = newDependencies.iterator();
-		while (d.hasNext()) {
-			connect((Dependency)d.next(),eventSource);
-		}
-
-
 	}
 	/**
 	 * Remove all dependencies between all tasks in an array
@@ -266,22 +277,29 @@ public class DependencyService {
 	 * @param eventSource
 	 */
 	public void removeAnyDependencies(List tasks, Object eventSource) {
-		HasDependencies pred;
-		HasDependencies succ;
-		Object temp;
-		for (int i = 0; i < tasks.size()-1; i++) {
-			temp = tasks.get(i);
-			if (!(temp instanceof HasDependencies))
-				continue;
-			pred = (HasDependencies)temp;
-			for (int j = i+1; j < tasks.size(); j++) {
-				temp = tasks.get(j);
-				if (!(temp instanceof HasDependencies))
-					continue;
-				succ = (HasDependencies)temp;
-				removeAnyDependencies(pred,succ,eventSource);
+		remove(findDependenciesBetween(tasks), eventSource);
+	}
+	/**
+	 * Dependencies whose predecessor and successor are both in tasks. Goes through the predecessor lists instead of
+	 * testing every pair of tasks.
+	 */
+	public List findDependenciesBetween(List tasks) {
+		Set selected = Collections.newSetFromMap(new IdentityHashMap());
+		for (Iterator i = tasks.iterator(); i.hasNext();) {
+			Object temp = i.next();
+			if (temp instanceof HasDependencies)
+				selected.add(temp);
+		}
+		ArrayList result = new ArrayList();
+		for (Iterator i = selected.iterator(); i.hasNext();) {
+			Iterator j = ((HasDependencies)i.next()).getPredecessorList().iterator();
+			while (j.hasNext()) {
+				Dependency dependency = (Dependency)j.next();
+				if (selected.contains(dependency.getPredecessor()))
+					result.add(dependency);
 			}
 		}
+		return result;
 	}
 	public void removeAnyDependencies(HasDependencies first, HasDependencies second, Object eventSource) {
 		Dependency dependency;
