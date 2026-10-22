@@ -138,6 +138,7 @@ import com.projectlibre1.dialog.AboutDialog;
 import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
+import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.FindDialog;
 import com.projectlibre1.dialog.HelpDialog;
 import com.projectlibre1.dialog.LocaleDialog;
@@ -155,6 +156,8 @@ import com.projectlibre1.dialog.options.CalendarDialogBox;
 import com.projectlibre1.document.Document;
 import com.projectlibre1.document.ObjectEvent;
 import com.projectlibre1.exchange.ResourceMappingForm;
+import com.projectlibre1.exchange.ulnl.UlnlWbsImporter;
+import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.SpreadSheetFieldArray;
 import com.projectlibre1.grouping.core.Node;
@@ -1023,6 +1026,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_UPDATE_TASKS, new UpdateTasksAction());
 		actionsMap.addHandler(ACTION_UPDATE_PROJECT, new UpdateProjectAction());
 		actionsMap.addHandler(ACTION_TASK_DEFAULT_SETTINGS, new TaskDefaultSettingsAction());
+		actionsMap.addHandler(ACTION_IMPORT_ULNL, new ImportUlnlAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1549,6 +1553,29 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			TaskDefaultSettingsDialog.doDialog();
+		}
+	}
+	public class ImportUlnlAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			List<UlnlWbsParser.WbsItem> wbs = ImportUlnlDialog.doDialog();
+			if (wbs == null)
+				return;
+			Frame f = getFrameInstance();
+			Cursor cur = f.getCursor();
+			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR)); // a few seconds for thousands of tasks
+			try {
+				UlnlWbsImporter.replaceWbs(getCurrentFrame().getProject(), wbs);
+			} finally {
+				f.setCursor(cur);
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
 		}
 	}
 
