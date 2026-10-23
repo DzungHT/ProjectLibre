@@ -81,11 +81,16 @@ import com.projectlibre1.document.Document;
 import com.projectlibre1.field.CustomFields;
 import com.projectlibre1.field.CustomFieldsImpl;
 import com.projectlibre1.field.FieldContext;
+import com.projectlibre1.field.FieldParseException;
+import com.projectlibre1.pm.resource.labor.GroupedNumber;
+import com.projectlibre1.pm.resource.labor.LaborCatalog;
+import com.projectlibre1.pm.resource.labor.SkillCatalog;
 import com.projectlibre1.interval.InvalidValueObjectForIntervalException;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.assignment.HasAssignments;
 import com.projectlibre1.pm.assignment.HasAssignmentsImpl;
 import com.projectlibre1.pm.assignment.timesheet.TimesheetHelper;
+import com.projectlibre1.pm.availability.Availability;
 import com.projectlibre1.pm.availability.AvailabilityTable;
 import com.projectlibre1.pm.calendar.CalendarService;
 import com.projectlibre1.pm.calendar.WorkCalendar;
@@ -934,6 +939,94 @@ public class EnterpriseResource implements Resource {
 	 */
 	public void setGeneric(boolean generic) {
 		this.generic = generic;
+	}
+
+	/**
+	 * Labor category: role and level of the NLTC table, see LaborCatalog, which gives the point and the price.
+	 * The point is not used by the scheduling: setting the role or the level multiplies the Max Units of each
+	 * period of availability by the point (100% becomes 159% for 1.59, see applyLaborPoint()), and the new
+	 * assignments take these units, so that a fixed work task lasts work / point. Skills: codes of SkillCatalog
+	 * separated by "; ". Null when not set
+	 */
+	private String laborRole = null;
+	private int laborLevel = -1;
+	private String skills = null;
+
+	public String getLaborRole() {
+		return laborRole;
+	}
+	public void setLaborRole(String laborRole) {
+		String role = laborRole == null ? null : LaborCatalog.getInstance().findRoleName(laborRole);
+		if (role == null && laborRole != null && laborRole.trim().length() > 0)
+			role = laborRole.trim(); // a role missing from the catalog of this computer is kept
+		double oldPoint = getLaborPoint();
+		this.laborRole = role;
+		applyLaborPoint(oldPoint);
+	}
+	/** Level as a text, like "4 - Middle (M)", see LaborCatalog.levelText() */
+	public String getLaborLevel() {
+		return laborLevel < 0 ? null : LaborCatalog.levelText(laborLevel);
+	}
+	/** Level from a number, a name or an abbreviation, see LaborCatalog.parseLevel(). Not set if it is none */
+	public void setLaborLevel(String laborLevel) {
+		double oldPoint = getLaborPoint();
+		this.laborLevel = LaborCatalog.parseLevel(laborLevel);
+		applyLaborPoint(oldPoint);
+	}
+	/**
+	 * The Max Units of each period of the availability are the allocation times the point (1 when the role and
+	 * level are not in the catalog): 0% before joining the project stays 0%, 100% becomes 159% for a point of 1.59,
+	 * 50% becomes 79.5%. When the point changes, all the periods are scaled from the old point to the new one
+	 */
+	private void applyLaborPoint(double oldPoint) {
+		double point = getLaborPoint();
+		double factor = (point > 0 ? point : 1) / (oldPoint > 0 ? oldPoint : 1);
+		if (factor == 1 || availabilityTable == null)
+			return;
+		for (Iterator i = availabilityTable.getList().iterator(); i.hasNext();) {
+			Availability availability = (Availability) i.next();
+			availability.setMaximumUnits(availability.getMaximumUnits() * factor);
+		}
+	}
+	/** Name and code of the level in the labor category, or the default ones for a role or level not in it */
+	public String getLaborLevelName() {
+		if (laborLevel < 0)
+			return null;
+		LaborCatalog.Category category = getLaborCategory();
+		return category == null ? LaborCatalog.levelName(laborLevel) : category.getLevelName();
+	}
+	public String getLaborLevelCode() {
+		if (laborLevel < 0)
+			return null;
+		LaborCatalog.Category category = getLaborCategory();
+		return category == null ? LaborCatalog.levelAbbreviation(laborLevel) : category.getLevelCode();
+	}
+	public String getSkills() {
+		return skills;
+	}
+	public void setSkills(String skills) throws FieldParseException {
+		List<String> codes;
+		try {
+			codes = SkillCatalog.getInstance().normalize(skills);
+		} catch (IllegalArgumentException e) {
+			throw new FieldParseException(Messages.getString("SkillCatalog.UnknownSkill") + " " + e.getMessage()); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		this.skills = SkillCatalog.getInstance().join(codes);
+	}
+	private LaborCatalog.Category getLaborCategory() {
+		return laborLevel < 0 ? null : LaborCatalog.getInstance().find(laborRole, laborLevel);
+	}
+	public double getLaborPoint() {
+		LaborCatalog.Category category = getLaborCategory();
+		return category == null ? 0 : category.getPoint();
+	}
+	public double getLaborPrice() {
+		LaborCatalog.Category category = getLaborCategory();
+		return category == null ? 0 : category.getPrice();
+	}
+	public Number getLaborPriceShown() {
+		double price = getLaborPrice();
+		return price == 0 ? null : new GroupedNumber(price);
 	}
 
 	private static short DEFAULT_VERSION=2;

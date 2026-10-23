@@ -308,7 +308,11 @@
 			<field property="ulnlKey" id="Field.ulnlKey" readOnly="true" />
 			<field property="functionCode" id="Field.functionCode" />
 			<field property="activity" id="Field.activity" />
-			<field property="lane" id="Field.lane" />
+			<!-- required skill (the property keeps its first name, lane): a basic skill of SkillCatalog -->
+			<field property="lane" id="Field.lane" dynamicOptions="true">
+				<choice list="com.projectlibre1.pm.resource.labor.SkillCatalog.allBasicSkills"
+					finder="com.projectlibre1.pm.resource.labor.SkillCatalog.findBasicSkill" allowNull="true" />
+			</field>
 			<!-- cancelled tasks: set by the Cancel Task and Un-cancel Task commands. The reason can be edited while the task is cancelled -->
 			<field property="cancelled" id="Field.cancelled" readOnly="true" />
 			<field property="cancelReason" id="Field.cancelReason" />
@@ -558,6 +562,25 @@
 			<field property="materialLabel" id="Field.materialLabel" />
 			<field property="generic" id="Field.generic" />
 			<field property="externalId" id="Field.externalId" />
+			<!-- labor category (role and level of the NLTC table, see LaborCatalog) and skills, for Auto Schedule -->
+			<field property="laborRole" id="Field.laborRole" dynamicOptions="true">
+				<choice list="com.projectlibre1.pm.resource.labor.LaborCatalog.allRoles"
+					finder="com.projectlibre1.pm.resource.labor.LaborCatalog.findRole" allowNull="true" />
+			</field>
+			<field property="laborLevel" id="Field.laborLevel" dynamicOptions="true">
+				<choice list="com.projectlibre1.pm.resource.labor.LaborCatalog.allLevels"
+					finder="com.projectlibre1.pm.resource.labor.LaborCatalog.findLevel" allowNull="true" />
+			</field>
+			<field property="laborLevelName" id="Field.laborLevelName" readOnly="true" />
+			<field property="laborLevelCode" id="Field.laborLevelCode" readOnly="true" />
+			<field property="laborPoint" id="Field.laborPoint" readOnly="true" />
+			<!-- the price with the grouping of the thousands: the sheets show a double like 2.5227E7 -->
+			<field property="laborPriceShown" id="Field.laborPrice" readOnly="true" />
+			<!-- a skill of SkillCatalog chosen, or several typed separated by ; -->
+			<field property="skills" id="Field.skills" dynamicOptions="true">
+				<choice list="com.projectlibre1.pm.resource.labor.SkillCatalog.allSkills"
+					finder="com.projectlibre1.pm.resource.labor.SkillCatalog.findSkills" allowNull="true" />
+			</field>
 		</class>
 
 		<class name="com.projectlibre1.pm.availability.HasAvailability">

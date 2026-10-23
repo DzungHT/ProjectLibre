@@ -57,6 +57,9 @@ package com.projectlibre1.options;
 
 import java.util.prefs.Preferences;
 
+import com.projectlibre1.pm.availability.Availability;
+import com.projectlibre1.pm.availability.AvailabilityTable;
+import com.projectlibre1.pm.availability.AvailabilityWarning;
 import com.projectlibre1.pm.resource.Resource;
 import com.projectlibre1.pm.scheduling.SchedulingType;
 import com.projectlibre1.pm.task.NormalTask;
@@ -111,12 +114,27 @@ public class TaskDefaultOption {
 	 * the resource's max units for work resources if enabled, otherwise 100%
 	 */
 	public double getAssignmentUnits(Resource resource) {
+		return getAssignmentUnits(resource, null);
+	}
+	/**
+	 * Same for an assignment to a task: the max units of the resource when the task starts, not today, as the
+	 * availability can have several periods. If the resource is not available then (0%, like before joining the
+	 * project), the max units of the first period after the start in which it is available
+	 */
+	public double getAssignmentUnits(Resource resource, NormalTask task) {
 		if (assignMaxUnits && resource != null && resource.isLabor()) {
-			double maxUnits = resource.getMaximumUnits();
+			double maxUnits = task == null ? resource.getMaximumUnits() : maximumUnitsFrom(resource, task.getStart());
 			if (maxUnits > 0)
 				return maxUnits;
 		}
 		return 1.0D;
+	}
+	private static double maximumUnitsFrom(Resource resource, long date) {
+		AvailabilityTable table = resource.getAvailabilityTable();
+		if (table == null)
+			return resource.getMaximumUnits();
+		long from = AvailabilityWarning.availableFrom(resource, date);
+		return from == AvailabilityWarning.NEVER ? 0 : ((Availability) table.findActive(from)).getMaximumUnits();
 	}
 
 	private static Preferences getPreferences() {

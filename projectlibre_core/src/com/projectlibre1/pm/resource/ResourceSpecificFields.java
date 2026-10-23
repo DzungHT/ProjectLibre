@@ -56,6 +56,7 @@
 package com.projectlibre1.pm.resource;
 
 import com.projectlibre1.field.FieldContext;
+import com.projectlibre1.field.FieldParseException;
 
 /**
  * Fields specific to resource class
@@ -86,4 +87,20 @@ public interface ResourceSpecificFields  {
 	boolean isMe();
 	long getExternalId();
 	void setExternalId(long externalId);
+	/** Role and level of the labor category (see LaborCatalog), null when not set */
+	String getLaborRole();
+	void setLaborRole(String laborRole);
+	String getLaborLevel();
+	void setLaborLevel(String laborLevel);
+	/** Name (Middle) and code (M) of the level, null when no level is set */
+	String getLaborLevelName();
+	String getLaborLevelCode();
+	/** Skills separated by "; ", see SkillCatalog. Null when not set */
+	String getSkills();
+	void setSkills(String skills) throws FieldParseException;
+	/** Point (performance, 1 = 100% unit) and price of a man-month of the labor category, 0 when unknown */
+	double getLaborPoint();
+	double getLaborPrice();
+	/** The price for the sheets, with the grouping of the thousands, null when unknown */
+	Number getLaborPriceShown();
 }

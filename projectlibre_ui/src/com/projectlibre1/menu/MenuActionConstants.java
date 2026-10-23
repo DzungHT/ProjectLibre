@@ -154,6 +154,9 @@ public interface MenuActionConstants {
 	public static final String ACTION_CANCEL_TASK            = "CancelTask";
 	public static final String ACTION_UNCANCEL_TASK          = "UncancelTask";
 	public static final String ACTION_AUTO_LINK              = "AutoLink";
+	public static final String ACTION_LABOR_CATALOG          = "LaborCatalog";
+	public static final String ACTION_SKILL_CATALOG          = "SkillCatalog";
+	public static final String ACTION_LABOR_COLUMNS          = "LaborColumns";
 	public static final String ACTION_UPDATE_ULNL            = "UpdateUlnl";
 	public static final String ACTION_SAVE_BASELINE           = "SaveBaseline";
 	public static final String ACTION_CLEAR_BASELINE          = "ClearBaseline";

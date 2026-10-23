@@ -62,7 +62,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
+import com.projectlibre1.util.Alert;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -86,16 +86,19 @@ import javax.swing.table.DefaultTableCellRenderer;
 import com.jgoodies.forms.builder.DefaultFormBuilder;
 import com.jgoodies.forms.layout.FormLayout;
 import com.projectlibre1.pm.graphic.frames.GraphicManager;
+import com.projectlibre1.pm.resource.labor.SkillCatalog;
 import com.projectlibre1.strings.Messages;
 
 /**
- * Maps the function codes found in a ULNL to a lane (BE, FE, Mobile...), used to link the development tasks
- * of each lane. The mapping is remembered: codes seen before get their last lane, new codes are shown in bold.
- * A lane can be typed, or chosen from the default lanes and the lanes used before.
+ * Maps the function codes found in a ULNL to a lane, the required skill of their development tasks (BE, FE,
+ * Mobile...), see SkillCatalog. The mapping is remembered: codes seen before get their last skill, new codes are
+ * shown in bold. A skill can be chosen from the basic skills of the catalog and the ones used before, or typed:
+ * typed skills are added to the catalog.
  */
 public final class UlnlLaneMappingDialog extends AbstractDialog {
 	private static final long serialVersionUID = 1L;
-	public static final String[] DEFAULT_LANES = { "BE", "FE", "Mobile" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	/** Role of the skills typed here */
+	private static final String DEVELOPER_ROLE = "DEV"; //$NON-NLS-1$
 	private static final String EMPTY_CODE_KEY = "<empty>"; // the empty code cannot be a preference key //$NON-NLS-1$
 	private static final Preferences preferences = Preferences.userNodeForPackage(UlnlLaneMappingDialog.class).node("ulnlLanes"); //$NON-NLS-1$
 
@@ -122,7 +125,9 @@ public final class UlnlLaneMappingDialog extends AbstractDialog {
 		codes = new ArrayList<String>(rowsByFunctionCode.keySet());
 		counts = new ArrayList<Integer>(rowsByFunctionCode.values());
 		isNew = new boolean[codes.size()];
-		Set<String> choices = new LinkedHashSet<String>(Arrays.asList(DEFAULT_LANES));
+		Set<String> choices = new LinkedHashSet<String>();
+		for (SkillCatalog.Skill skill : SkillCatalog.getInstance().getBasicSkills())
+			choices.add(skill.getCode());
 		for (int i = 0; i < codes.size(); i++) {
 			String lane = preferences.get(preferenceKey(codes.get(i)), null);
 			isNew[i] = lane == null;
@@ -146,13 +151,25 @@ public final class UlnlLaneMappingDialog extends AbstractDialog {
 		if (table.isEditing())
 			table.getCellEditor().stopCellEditing();
 		result = new LinkedHashMap<String, String>();
+		SkillCatalog catalog = SkillCatalog.getInstance();
+		Set<String> newSkills = new LinkedHashSet<String>();
 		for (int i = 0; i < codes.size(); i++) {
 			String lane = lanes.get(i).trim();
+			SkillCatalog.Skill skill = catalog.find(lane);
+			if (skill != null)
+				lane = skill.getCode(); // the case of the catalog
+			else if (lane.length() > 0)
+				newSkills.add(lane);
 			String key = preferenceKey(codes.get(i));
 			if (key.length() <= Preferences.MAX_KEY_LENGTH) // longer codes are not remembered
 				preferences.put(key, lane);
 			if (lane.length() > 0)
 				result.put(codes.get(i), lane);
+		}
+		try {
+			catalog.addBasic(newSkills, DEVELOPER_ROLE);
+		} catch (Exception e) {
+			Alert.error(Messages.getString("SkillCatalog.SaveError") + " " + e.getMessage(), this); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		return true;
 	}

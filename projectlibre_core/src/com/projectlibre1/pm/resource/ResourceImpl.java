@@ -85,6 +85,7 @@ import com.projectlibre1.document.Document;
 import com.projectlibre1.field.CustomFields;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.field.FieldContext;
+import com.projectlibre1.field.FieldParseException;
 import com.projectlibre1.graphic.configuration.HasIndicators;
 import com.projectlibre1.graphic.configuration.HasResourceIndicators;
 import com.projectlibre1.grouping.core.Node;
@@ -558,6 +559,39 @@ public class ResourceImpl implements Resource, HasAvailability, HasResourceIndic
 	}
 	public void setGeneric(boolean generic) {
 		globalResource.setGeneric(generic);
+	}
+	public String getLaborRole() {
+		return globalResource.getLaborRole();
+	}
+	public void setLaborRole(String laborRole) {
+		globalResource.setLaborRole(laborRole);
+	}
+	public String getLaborLevel() {
+		return globalResource.getLaborLevel();
+	}
+	public void setLaborLevel(String laborLevel) {
+		globalResource.setLaborLevel(laborLevel);
+	}
+	public String getLaborLevelName() {
+		return globalResource.getLaborLevelName();
+	}
+	public String getLaborLevelCode() {
+		return globalResource.getLaborLevelCode();
+	}
+	public String getSkills() {
+		return globalResource.getSkills();
+	}
+	public void setSkills(String skills) throws FieldParseException {
+		globalResource.setSkills(skills);
+	}
+	public double getLaborPoint() {
+		return globalResource.getLaborPoint();
+	}
+	public double getLaborPrice() {
+		return globalResource.getLaborPrice();
+	}
+	public Number getLaborPriceShown() {
+		return globalResource.getLaborPriceShown();
 	}
 	/**
 	 * @return
