@@ -115,7 +115,7 @@ public class LocalFileImporter extends FileImporter {
 		}else {
 	        try {
 				DataUtil serializer=new DataUtil();
-				System.out.println("Loading "+getFileName()+"..."); //$NON-NLS-1$ //$NON-NLS-2$
+				System.out.println("Loading"+getFileName()+"..."); //$NON-NLS-1$ //$NON-NLS-2$
 
 				long t1=System.currentTimeMillis();
 				ObjectInputStream in=new ObjectInputStream(fin);
@@ -350,6 +350,7 @@ public class LocalFileImporter extends FileImporter {
 		try {
 			FileOutputStream fout=new FileOutputStream(tmpFile);
 			try {
+				exportProgress(0.05f, Messages.getString("SaveProgress.Preparing")); //$NON-NLS-1$
 				DataUtil serializer=new DataUtil();
 				System.out.println("Serialization..."); //$NON-NLS-1$
 				long t1=System.currentTimeMillis();
@@ -358,6 +359,7 @@ public class LocalFileImporter extends FileImporter {
 				projectData.setLocal(true);
 				long t2=System.currentTimeMillis();
 				System.out.println("Serialization...Done in "+(t2-t1)+" ms"); //$NON-NLS-1$ //$NON-NLS-2$
+				exportProgress(0.3f, Messages.getString("SaveProgress.Writing")); //$NON-NLS-1$
 				System.out.println("Saving "+file+"..."); //$NON-NLS-1$ //$NON-NLS-2$
 				t1=System.currentTimeMillis();
 				ObjectOutputStream out=new ObjectOutputStream(fout);
@@ -373,6 +375,7 @@ public class LocalFileImporter extends FileImporter {
 			}
 			try{
 				BufferedOutputStream bout=new BufferedOutputStream(fout);
+				exportProgress(0.5f, Messages.getString("SaveProgress.WritingXml")); //$NON-NLS-1$
 				bout.write(PROJECT_LIBRE_FILE_SEPARATOR.getBytes());
 				bout.flush();
 				FileImporter importer=LocalSession.getImporter("com.projectlibre1.exchange.MicrosoftImporter");
@@ -426,6 +429,7 @@ public class LocalFileImporter extends FileImporter {
     	final Job job=new Job(importer.getJobQueue(),"exportFile",Messages.getString("LocalFileImporter.Exporting"),true); //$NON-NLS-1$ //$NON-NLS-2$
         job.addRunnable(new JobRunnable("Export",1.0f){ //$NON-NLS-1$
     		public Object run() throws Exception{
+    			importer.setExportRunnable(this);
     			importer.exportFile();
      			setProgress(1.0f);
                 return null;

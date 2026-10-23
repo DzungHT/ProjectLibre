@@ -78,6 +78,7 @@ import com.projectlibre1.grouping.core.model.NodeModel;
 import com.projectlibre1.grouping.core.model.NodeModelUtil;
 import com.projectlibre1.grouping.core.summaries.DeepChildWalker;
 import com.projectlibre1.job.Job;
+import com.projectlibre1.job.JobProgressDialog;
 import com.projectlibre1.job.JobRunnable;
 import com.projectlibre1.pm.resource.ResourcePool;
 import com.projectlibre1.pm.resource.ResourcePoolFactory;
@@ -380,6 +381,15 @@ public class ProjectFactory {
 	public void saveProject(final Project project, final SaveOptions opt) {
 		Job job=getSaveProjectJob(project,opt);
 		Session session=SessionFactory.getInstance().getSession(opt.isLocal());
+		if (job!=null&&Environment.isVisible()&&SwingUtilities.isEventDispatchThread()){
+			// the job saves in its own thread while a modal dialog shows the progress: the window keeps repainting
+			// instead of looking frozen, and the project cannot be changed while it is written
+			job.setShowProgress(false);
+			session.schedule(job);
+			JobProgressDialog.waitFor(job,Messages.getString("SaveProgress.Title"), //$NON-NLS-1$
+					MessageFormat.format(Messages.getString("SaveProgress.Saving"),project.getName())); //$NON-NLS-1$
+			return;
+		}
 		if (job!=null){
 			if (opt.isSync()) job.addSync();
 			session.schedule(job);
