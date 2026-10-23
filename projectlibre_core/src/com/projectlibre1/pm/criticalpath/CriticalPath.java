@@ -91,6 +91,7 @@ public class CriticalPath implements SchedulingAlgorithm {
 	Project project;
 	boolean suspendUpdates = false; // flag to suspend updates when multiple objects are treated
 	boolean needsReset = false; // flag to indicate that a reset is pending during suspended updates
+	boolean needsMarkAll = false; // all the tasks are to be marked as needing recalculation at the end of the transaction
 	long earliestStart;
 	long latestFinish;
 	private boolean criticalPathJustChanged = false;
@@ -106,10 +107,12 @@ public class CriticalPath implements SchedulingAlgorithm {
 		fieldUpdater = CriticalPathFields.getInstance(this,project);
 
 		startSentinel = new NormalTask(true,project); //local
+		startSentinel.useIndexedDependencyLists(); // it has a dependency with each task
 		startSentinel.setDuration(0);
 		startSentinel.setName("<Start>"); // name doesn't matter - useful for debugging purposes
 
 		finishSentinel = new NormalTask(true,project); //local
+		finishSentinel.useIndexedDependencyLists();
 		finishSentinel.setDuration(0);
 		finishSentinel.setName("<End>"); // name doesn't matter - useful for debugging purposes
 
@@ -435,7 +438,10 @@ public class CriticalPath implements SchedulingAlgorithm {
 			successor.markTaskAsNeedingRecalculation();
 			
 //			The line below fixes a bug with nested parents of the sort pred->grand par sib1->sib2. Of course, it means most of the code above is redundant (except for subproject stuff)
-			project.markAllTasksAsNeedingRecalculation(true); 
+			if (suspendUpdates) // many links in a transaction: done once at its end, it goes through all the tasks
+				needsMarkAll = true;
+			else
+				project.markAllTasksAsNeedingRecalculation(true);
 			calculate(true,null); // Run both passes, since the CP might be modified and it's hard to tell if so
 		} else if (changedObject == project) { // if whole project changed, such
 											   // as hierarchy event
@@ -511,7 +517,36 @@ public class CriticalPath implements SchedulingAlgorithm {
 		finishSentinel.setScheduleConstraint(ConstraintType.FNLT, date);
 		markBoundsAsDirty();
 	}
+	private int arrangementDeferral = 0;
+	public void setArrangementDeferred(boolean deferred) {
+		if (deferred) {
+			if (arrangementDeferral++ == 0)
+				predecessorTaskList.setAppendOnly(true);
+			return;
+		}
+		if (arrangementDeferral > 0 && --arrangementDeferral == 0) {
+			predecessorTaskList.setAppendOnly(false);
+			if (predecessorTaskList.takeAppended())
+				reset(); // puts all the tasks in order
+		}
+	}
+	private int boundsMarkingDeferral = 0;
+	private boolean boundsMarkingPending = false;
+	public void setBoundsMarkingDeferred(boolean deferred) {
+		if (deferred) {
+			boundsMarkingDeferral++;
+			return;
+		}
+		if (boundsMarkingDeferral > 0 && --boundsMarkingDeferral == 0 && boundsMarkingPending) {
+			boundsMarkingPending = false;
+			markBoundsAsDirty();
+		}
+	}
 	public void markBoundsAsDirty() {
+		if (boundsMarkingDeferral > 0) { // the tasks are only marked, done once at the end
+			boundsMarkingPending = true;
+			return;
+		}
 		startSentinel.markTaskAsNeedingRecalculation();
 		finishSentinel.markTaskAsNeedingRecalculation();
 		
@@ -559,6 +594,10 @@ public class CriticalPath implements SchedulingAlgorithm {
 	public void multipleTransaction(MultipleTransaction objectEvent) {
 		if (objectEvent.isFinalEnd()) {
 			suspendUpdates = false;
+			if (needsMarkAll) {
+				needsMarkAll = false;
+				project.markAllTasksAsNeedingRecalculation(true);
+			}
 			if (needsReset)
 				reset();
 			calculate(true,null);

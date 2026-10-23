@@ -1655,6 +1655,11 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 	public AssociationList getSuccessorList() {
 		return dependencies.getSuccessorList();
 	}
+	/** For the sentinels of the schedule, see HasDependenciesImpl.useIndexedLists() */
+	public void useIndexedDependencyLists() {
+		if (dependencies instanceof HasDependenciesImpl)
+			((HasDependenciesImpl) dependencies).useIndexedLists();
+	}
 
 	public AssociationList getDependencyList(boolean pred) {
 		return dependencies.getDependencyList(pred);

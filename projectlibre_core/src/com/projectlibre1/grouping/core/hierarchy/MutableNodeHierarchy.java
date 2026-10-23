@@ -252,6 +252,9 @@ public class MutableNodeHierarchy extends AbstractMutableNodeHierarchy{
     			else owningProject=task.getOwningProject();
     		}else owningProject=(Project)model.getDataFactory();
 
+			// the tasks are put in order in the scheduling once, after the loop, instead of for each task
+			project.getSchedulingAlgorithm().setArrangementDeferred(true);
+			try {
         	for (int i=0;i<descendants.length;i++){
         		if (descendants[i].getImpl() instanceof Task){
         			Task task=(Task)descendants[i].getImpl();
@@ -352,6 +355,9 @@ public class MutableNodeHierarchy extends AbstractMutableNodeHierarchy{
     	    		insertedNodes.add(descendants[i]);
         		}
         	}
+			} finally {
+				project.getSchedulingAlgorithm().setArrangementDeferred(false);
+			}
     	}else if (resourcePool!=null){
         	for (int i=0;i<descendants.length;i++){
         		if (descendants[i].getImpl() instanceof Resource){
