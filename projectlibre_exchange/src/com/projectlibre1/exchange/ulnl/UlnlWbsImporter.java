@@ -75,6 +75,8 @@ import com.projectlibre1.pm.task.Project;
 /**
  * Replaces the WBS of a project with the tree read from a ULNL workbook.
  * Project information, resources and calendars are kept. The whole import is a single undo step.
+ * The tasks keep the key, function code, activity and lane of the ULNL, and the work of the activities as
+ * original estimate.
  * The work is done in small steps by next(), so that a progress dialog can repaint between them.
  */
 public class UlnlWbsImporter {
@@ -122,7 +124,8 @@ public class UlnlWbsImporter {
 			project.beginUndoUpdate();
 			undoStarted = true;
 			List<Node> oldNodes = new ArrayList<Node>();
-			for (Iterator i = model.getChildren(null).iterator(); i.hasNext();) {
+			List children = model.getChildren(null); // null for a project that never had rows
+			for (Iterator i = children == null ? oldNodes.iterator() : children.iterator(); i.hasNext();) {
 				Node node = (Node) i.next();
 				if (!node.isVoid())
 					oldNodes.add(node);
@@ -217,9 +220,14 @@ public class UlnlWbsImporter {
 		NormalTask task = (NormalTask) node.getImpl();
 		task.setName(item.getName());
 		task.setWbsParent(p.parent == null ? null : (NormalTask) p.parent.getImpl());
+		task.setUlnlKey(item.getKey());
+		task.setFunctionCode(item.getFunctionCode());
+		task.setLane(item.getLane());
 		if (item.isActivity()) {
 			task.setSchedulingType(SchedulingType.FIXED_WORK);
 			task.setEstimated(false);
+			task.setActivity(item.getActivityCode());
+			task.setOriginalEstimate(Duration.getInstance(item.getWork(), TimeUnit.HOURS));
 			activities.put(task, item.getWork());
 		}
 		if (p.parent == null)

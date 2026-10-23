@@ -1040,6 +1040,9 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_IMPORT_WBS_EXCEL, new ImportWbsExcelAction());
 		actionsMap.addHandler(ACTION_EFFORT_REPORT, new EffortReportAction());
 		actionsMap.addHandler(ACTION_EFFORT_COLUMNS, new EffortColumnsAction());
+		actionsMap.addHandler(ACTION_ESTIMATE_COLUMNS, new EstimateColumnsAction());
+		actionsMap.addHandler(ACTION_SET_ORIGINAL_ESTIMATE, new SetOriginalEstimateAction());
+		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1638,9 +1641,50 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		}
 	}
 	/** Shows the MH, MD and MM columns after the Work column of the task sheet, or hides them */
-	public class EffortColumnsAction extends MenuActionsMap.DocumentMenuAction {
+	public class EffortColumnsAction extends ToggleColumnsAction {
 		private static final long serialVersionUID = 1L;
-		private final String[] ids = {"Field.manHours", "Field.manDays", "Field.manMonths"}; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		public EffortColumnsAction() {
+			super(new String[] {"Field.manHours", "Field.manDays", "Field.manMonths"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		}
+	}
+	/** Shows the original estimate and ULNL columns after the Work column of the task sheet, or hides them */
+	public class EstimateColumnsAction extends ToggleColumnsAction {
+		private static final long serialVersionUID = 1L;
+		public EstimateColumnsAction() {
+			super(new String[] {"Field.originalEstimate", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+		}
+	}
+	public class SetOriginalEstimateAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive() && getCurrentFrame().doOriginalEstimate(true) == 0)
+				Alert.warn(Messages.getString("OriginalEstimate.NothingSet"), getFrameInstance()); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	public class ResetWorkToEstimateAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive() && getCurrentFrame().doOriginalEstimate(false) == 0)
+				Alert.warn(Messages.getString("OriginalEstimate.NothingReset"), getFrameInstance()); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Shows columns after the Work column of the task sheet (after the name if there is no Work column), or hides them */
+	public class ToggleColumnsAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final String[] ids;
+		public ToggleColumnsAction(String[] ids) {
+			this.ids = ids;
+		}
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			if (!isDocumentActive())

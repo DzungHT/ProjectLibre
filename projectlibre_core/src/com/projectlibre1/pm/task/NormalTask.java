@@ -453,6 +453,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 		boolean keepWork = recalculateDuration && defaultAssignment != null
 				&& getSchedulingType() == SchedulingType.FIXED_WORK;
 		long workBefore = keepWork ? getWork(null) : 0;
+		long workBeforeChange = assignment.isInitialized() ? getWork(null) : 0; // for the original estimate
 
 		if (!assignment.isDefault()) {
 			// get rid of any default
@@ -499,6 +500,8 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 						true, true); // conserve total units
 			}
 		}
+		if (!assignment.isDefault())
+			restoreOriginalEstimate(workBeforeChange);
 		setDirty(true);
 		//project.endUndoUpdate();
 
@@ -515,6 +518,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 		// Get details of current assignments before change
 
 		double assignedRate = getRemainingUnits();
+		long workBeforeChange = recalculateDuration ? getWork(null) : 0; // for the original estimate
 		((TaskSnapshot) getCurrentSnapshot()).removeAssignment(assignment);
 
 		if (!assignment.isDefault()) {
@@ -532,6 +536,8 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 				newDefault.usePropertiesOf(assignment); // the default assignment must take on properties of the removed assignment
 				AssignmentService.getInstance().connect(newDefault, null);
 			}
+			if (recalculateDuration)
+				restoreOriginalEstimate(workBeforeChange);
 		}
 		setDirty(true);
 		//project.endUndoUpdate();
@@ -1808,6 +1814,132 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 		return roundEffort(getWorkHours() / HOURS_PER_MAN_DAY / MAN_DAYS_PER_MAN_MONTH);
 	}
 
+	/**
+	 * Original estimate: the work estimated in the ULNL (or set by the user), kept apart from the work.
+	 * It is not used by the scheduling. The work goes back to it when assignments are added or removed,
+	 * if it was equal to it before. Millis, 0 if not set. A summary has the total of the tasks below it.
+	 */
+	private long originalEstimate = 0;
+	/** Below this difference the work is taken as equal to the original estimate (rounding of the units) */
+	private static final long ESTIMATE_TOLERANCE = 60 * 1000;
+
+	public long getOriginalEstimate() {
+		if (!isWbsParent())
+			return originalEstimate;
+		long total = 0;
+		Collection children = getWbsChildrenNodes();
+		if (children != null)
+			for (Iterator i = children.iterator(); i.hasNext();) {
+				Object impl = ((Node) i.next()).getImpl();
+				if (impl instanceof NormalTask)
+					total += ((NormalTask) impl).getOriginalEstimate();
+			}
+		return total;
+	}
+	public void setOriginalEstimate(long originalEstimate) {
+		this.originalEstimate = Math.max(0, Duration.millis(originalEstimate));
+	}
+	public boolean isReadOnlyOriginalEstimate(FieldContext fieldContext) {
+		return isWbsParent();
+	}
+	public boolean hasOriginalEstimate() {
+		return getOriginalEstimate() > 0;
+	}
+	/** Work minus original estimate, in hours rounded down to 3 decimals. 0 for tasks without original estimate */
+	public double getEstimateVariance() {
+		return roundEffort(estimateVarianceHours());
+	}
+	private double estimateVarianceHours() {
+		if (!isWbsParent())
+			return originalEstimate == 0 ? 0 : getWorkHours() - originalEstimate / MILLIS_PER_HOUR;
+		double hours = 0;
+		Collection children = getWbsChildrenNodes();
+		if (children != null)
+			for (Iterator i = children.iterator(); i.hasNext();) {
+				Object impl = ((Node) i.next()).getImpl();
+				if (impl instanceof NormalTask)
+					hours += ((NormalTask) impl).estimateVarianceHours();
+			}
+		return hours;
+	}
+	/** True if the work of this leaf task, given in millis, is its original estimate */
+	public boolean isWorkOriginalEstimate(long work) {
+		return originalEstimate > 0 && Math.abs(Duration.millis(work) - originalEstimate) < ESTIMATE_TOLERANCE;
+	}
+	/**
+	 * After a change of assignments: the work goes back to the original estimate if it was equal to it before
+	 * the change, for a task whose work is kept when the assignments change (effort driven) and not started
+	 */
+	private void restoreOriginalEstimate(long workBefore) {
+		if (isEffortDriven() && isWorkOriginalEstimate(workBefore))
+			resetWorkToOriginalEstimate();
+	}
+	/**
+	 * Sets the work of this leaf task back to its original estimate, if it has one and is not started.
+	 * Returns true if the work was changed
+	 */
+	public boolean resetWorkToOriginalEstimate() {
+		if (isWbsParent() || originalEstimate == 0 || getActualWork(null) != 0)
+			return false;
+		long work = Duration.millis(getWork(null));
+		if (isWorkOriginalEstimate(work))
+			return false;
+		if (work == 0) {
+			setWork(originalEstimate);
+			return true;
+		}
+		// the duration of each assignment is scaled, keeping its units, as setWork() does for fixed work. But
+		// setWork() does not change the assignments ending before the task, like the default assignment created
+		// when the last resource is removed, as the task is not rescheduled yet
+		double multiplier = ((double) originalEstimate) / work;
+		for (Iterator i = getAssignments().iterator(); i.hasNext();) {
+			Assignment assignment = (Assignment) i.next();
+			assignment.adjustRemainingDuration((long) (assignment.getRemainingDuration() * multiplier), false);
+		}
+		return true;
+	}
+
+	/**
+	 * Information from the ULNL: key of the row (to find the task again when importing a new version),
+	 * function code (column L), activity code (GP, PT, KT...) and lane (BE, FE, Mobile...) mapped from the
+	 * function code. Null when not set. They can also be set by the user, for tasks not created from a ULNL
+	 */
+	private String ulnlKey = null;
+	private String functionCode = null;
+	private String activity = null;
+	private String lane = null;
+
+	public String getUlnlKey() {
+		return ulnlKey;
+	}
+	public void setUlnlKey(String ulnlKey) {
+		this.ulnlKey = emptyToNull(ulnlKey);
+	}
+	public String getFunctionCode() {
+		return functionCode;
+	}
+	public void setFunctionCode(String functionCode) {
+		this.functionCode = emptyToNull(functionCode);
+	}
+	public String getActivity() {
+		return activity;
+	}
+	public void setActivity(String activity) {
+		this.activity = emptyToNull(activity);
+	}
+	public String getLane() {
+		return lane;
+	}
+	public void setLane(String lane) {
+		this.lane = emptyToNull(lane);
+	}
+	private static String emptyToNull(String s) {
+		if (s == null)
+			return null;
+		s = s.trim();
+		return s.length() == 0 ? null : s;
+	}
+
 	public double getBaselineWork() {
 		return getBaselineWork(0, null);
 	}
@@ -2106,6 +2238,11 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			n.priority = priority;
 			n.version=version;
 			n.workCalendar = workCalendar;
+			n.originalEstimate = originalEstimate;
+			n.ulnlKey = ulnlKey;
+			n.functionCode = functionCode;
+			n.activity = activity;
+			n.lane = lane;
 		}
 
 		super.cloneTo(task);

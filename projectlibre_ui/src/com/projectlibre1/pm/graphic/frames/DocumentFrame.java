@@ -60,11 +60,16 @@ import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.event.ActionEvent;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Set;
+
+import javax.swing.undo.UndoableEditSupport;
 
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.SwingUtilities;
@@ -112,6 +117,9 @@ import com.projectlibre1.document.ObjectEvent;
 import com.projectlibre1.document.ObjectSelectionEvent;
 import com.projectlibre1.document.ObjectSelectionListener;
 import com.projectlibre1.field.Field;
+import com.projectlibre1.configuration.FieldDictionary;
+import com.projectlibre1.field.FieldParseException;
+import com.projectlibre1.undo.FieldEdit;
 import com.projectlibre1.grouping.core.Node;
 import com.projectlibre1.grouping.core.NodeList;
 import com.projectlibre1.grouping.core.model.NodeModel;
@@ -126,6 +134,7 @@ import com.projectlibre1.pm.calendar.WorkingCalendar;
 import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.dependency.DependencyService;
 import com.projectlibre1.pm.resource.ResourceImpl;
+import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Portfolio;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.ProjectEvent;
@@ -479,6 +488,75 @@ public class DocumentFrame extends NamedFrame implements
 				DependencyService.getInstance().remove(dependency, DocumentFrame.this, true);
 			}
 		});
+	}
+
+	/**
+	 * For the selected tasks and the tasks below the selected summaries: sets the original estimate to the work
+	 * (fromWork true), or the work back to the original estimate. Tasks that are started are not changed by a reset.
+	 * The schedule is calculated once at the end and a single undo reverts all. Returns the number of tasks changed
+	 */
+	public int doOriginalEstimate(boolean fromWork) {
+		finishAnyOperations();
+		List selection = getSelectedImpls(true);
+		if (selection == null)
+			return 0;
+		Set<NormalTask> tasks = new LinkedHashSet<NormalTask>();
+		for (Iterator i = selection.iterator(); i.hasNext();) {
+			Object impl = i.next();
+			if (impl instanceof NormalTask)
+				addLeafTasks((NormalTask) impl, tasks);
+		}
+		Field workField = FieldDictionary.getInstance().getFieldFromId("Field.work"); //$NON-NLS-1$
+		Field estimateField = FieldDictionary.getInstance().getFieldFromId("Field.originalEstimate"); //$NON-NLS-1$
+		Field from = fromWork ? workField : estimateField;
+		Field to = fromWork ? estimateField : workField;
+		Project project = getProject();
+		UndoableEditSupport undo = project.getUndoController() == null ? null : project.getUndoController().getEditSupport();
+		int changed = 0;
+		project.beginUndoUpdate();
+		int transactionId = project.fireMultipleTransaction(0, true);
+		try {
+			for (NormalTask task : tasks) {
+				Object oldValue = to.getValue(task, null);
+				Object value;
+				if (fromWork) {
+					if (task.isWorkOriginalEstimate(task.getWork(null)))
+						continue;
+					value = from.getValue(task, null);
+					try {
+						to.setValue(task, this, value, null);
+					} catch (FieldParseException e) {
+						continue;
+					}
+				} else {
+					if (task.isReadOnlyWork(null) || !task.resetWorkToOriginalEstimate())
+						continue;
+					task.markTaskAsNeedingRecalculation();
+					to.fireEvent(task, this, null);
+					value = to.getValue(task, null);
+				}
+				if (undo != null)
+					undo.postEdit(new FieldEdit(to, task, value, oldValue, this, null));
+				changed++;
+			}
+		} finally {
+			project.fireMultipleTransaction(transactionId, false);
+			project.endUndoUpdate();
+		}
+		return changed;
+	}
+	private static void addLeafTasks(NormalTask task, Set<NormalTask> tasks) {
+		if (!task.isWbsParent()) {
+			tasks.add(task);
+			return;
+		}
+		Collection children = task.getWbsChildrenNodes();
+		if (children != null)
+			for (Iterator i = children.iterator(); i.hasNext();) {
+				Object impl = ((Node) i.next()).getImpl();
+				if (impl instanceof NormalTask)
+					addLeafTasks((NormalTask) impl, tasks);
+			}
 	}
 
 	/**
