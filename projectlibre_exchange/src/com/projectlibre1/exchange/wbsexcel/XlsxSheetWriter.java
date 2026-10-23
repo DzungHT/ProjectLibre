@@ -72,7 +72,7 @@ import com.projectlibre1.exchange.ulnl.XlsxSheetReader;
 /**
  * Minimal writer of a one sheet .xlsx (Office Open XML), counterpart of {@link XlsxSheetReader}.
  * All the cells are inline strings with the Text number format, so that what is typed in Excel
- * stays text (a typed date is not turned into a serial number).
+ * stays text (a typed date is not turned into a serial number), except the cells with a number style.
  * Rows are added in order, then {@link #write(File)} writes the file.
  */
 public class XlsxSheetWriter {
@@ -81,6 +81,17 @@ public class XlsxSheetWriter {
 	// cellXfs: 0 default, 1 header, then editable / read only cells for each indent
 	private static final int STYLE_HEADER = 1;
 	private static final int STYLE_FIRST_CELL = 2;
+	private static final int STYLE_AFTER_CELLS = STYLE_FIRST_CELL + 2 * (MAX_INDENT + 1);
+	/** Bold text without border */
+	public static final int STYLE_TITLE = STYLE_AFTER_CELLS;
+	/** Bold text of a total row */
+	public static final int STYLE_TOTAL = STYLE_AFTER_CELLS + 1;
+	/** Number cells: the value is written as a number, shown with its decimals or none */
+	public static final int STYLE_NUMBER = STYLE_AFTER_CELLS + 2;
+	public static final int STYLE_TOTAL_NUMBER = STYLE_AFTER_CELLS + 3;
+	public static final int STYLE_INTEGER = STYLE_AFTER_CELLS + 4;
+	public static final int STYLE_TOTAL_INTEGER = STYLE_AFTER_CELLS + 5;
+	private static final int STYLE_COUNT = STYLE_AFTER_CELLS + 6;
 
 	private final String sheetName;
 	private final List<Row> rows = new ArrayList<Row>();
@@ -217,8 +228,7 @@ public class XlsxSheetWriter {
 		b.append("<border><left style=\"thin\"><color rgb=\"FFBFBFBF\"/></left><right style=\"thin\"><color rgb=\"FFBFBFBF\"/></right>"); //$NON-NLS-1$
 		b.append("<top style=\"thin\"><color rgb=\"FFBFBFBF\"/></top><bottom style=\"thin\"><color rgb=\"FFBFBFBF\"/></bottom><diagonal/></border></borders>"); //$NON-NLS-1$
 		b.append("<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"); //$NON-NLS-1$
-		int count = STYLE_FIRST_CELL + 2 * (MAX_INDENT + 1);
-		b.append("<cellXfs count=\"").append(count).append("\">"); //$NON-NLS-1$ //$NON-NLS-2$
+		b.append("<cellXfs count=\"").append(STYLE_COUNT).append("\">"); //$NON-NLS-1$ //$NON-NLS-2$
 		b.append("<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"); //$NON-NLS-1$
 		b.append("<xf numFmtId=\"49\" fontId=\"1\" fillId=\"2\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\" applyAlignment=\"1\"><alignment vertical=\"center\" wrapText=\"1\"/></xf>"); //$NON-NLS-1$
 		for (int indent = 0; indent <= MAX_INDENT; indent++) {
@@ -230,6 +240,12 @@ public class XlsxSheetWriter {
 				else
 					b.append("/>"); //$NON-NLS-1$
 			}
+		}
+		b.append("<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"); // title //$NON-NLS-1$
+		b.append("<xf numFmtId=\"49\" fontId=\"1\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\"/>"); // total //$NON-NLS-1$
+		for (int format : new int[] {0, 3}) { // General shows the decimals of the value, 3 is #,##0
+			b.append("<xf numFmtId=\"").append(format).append("\" fontId=\"0\" fillId=\"0\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyBorder=\"1\"/>"); //$NON-NLS-1$ //$NON-NLS-2$
+			b.append("<xf numFmtId=\"").append(format).append("\" fontId=\"1\" fillId=\"3\" borderId=\"1\" xfId=\"0\" applyNumberFormat=\"1\" applyFont=\"1\" applyFill=\"1\" applyBorder=\"1\"/>"); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		b.append("</cellXfs>"); //$NON-NLS-1$
 		b.append("<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles>"); //$NON-NLS-1$
@@ -265,6 +281,8 @@ public class XlsxSheetWriter {
 					w.write(" s=\"" + style + "\""); //$NON-NLS-1$ //$NON-NLS-2$
 				if (value == null || value.length() == 0) {
 					w.write("/>"); //$NON-NLS-1$
+				} else if (style >= STYLE_NUMBER && style <= STYLE_TOTAL_INTEGER) {
+					w.write("><v>" + escape(value) + "</v></c>"); //$NON-NLS-1$ //$NON-NLS-2$
 				} else {
 					w.write(" t=\"inlineStr\"><is><t xml:space=\"preserve\">"); //$NON-NLS-1$
 					w.write(escape(value));

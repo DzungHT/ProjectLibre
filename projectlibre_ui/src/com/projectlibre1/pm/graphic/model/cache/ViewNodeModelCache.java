@@ -265,6 +265,9 @@ public class ViewNodeModelCache implements NodeModelCache, ViewTransformerListen
     public void expandOneLevel(boolean expand) {
         reference.expandOneLevel(expand);
     }
+    public void expandToLevel(int level) {
+        reference.expandToLevel(level);
+    }
 
 
     public void createDependency(GraphicNode startNode, GraphicNode endNode)

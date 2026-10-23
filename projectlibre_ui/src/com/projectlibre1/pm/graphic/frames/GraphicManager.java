@@ -78,6 +78,7 @@ import java.io.ObjectOutputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -142,6 +143,7 @@ import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
+import com.projectlibre1.dialog.EffortReportDialog;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
 import com.projectlibre1.dialog.ImportWbsExcelDialog;
 import com.projectlibre1.dialog.FindDialog;
@@ -1035,6 +1037,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_IMPORT_ULNL, new ImportUlnlAction());
 		actionsMap.addHandler(ACTION_EXPORT_WBS_EXCEL, new ExportWbsExcelAction());
 		actionsMap.addHandler(ACTION_IMPORT_WBS_EXCEL, new ImportWbsExcelAction());
+		actionsMap.addHandler(ACTION_EFFORT_REPORT, new EffortReportAction());
+		actionsMap.addHandler(ACTION_EFFORT_COLUMNS, new EffortColumnsAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1622,6 +1626,44 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	public class EffortReportAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive())
+				EffortReportDialog.doDialog(getCurrentFrame().getProject());
+		}
+	}
+	/** Shows the MH, MD and MM columns after the Work column of the task sheet, or hides them */
+	public class EffortColumnsAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final String[] ids = {"Field.manHours", "Field.manDays", "Field.manMonths"}; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			SpreadSheet sp = getCurrentFrame().getGanttView().getSpreadSheet();
+			SpreadSheetFieldArray fields = (SpreadSheetFieldArray) sp.getFieldArray();
+			boolean shown = false;
+			for (int c = fields.size() - 1; c >= 0; c--) {
+				if (Arrays.asList(ids).contains(((Field) fields.get(c)).getId())) {
+					fields = fields.removeField(c);
+					shown = true;
+				}
+			}
+			if (!shown) {
+				int position = fields.size();
+				for (int c = 0; c < fields.size(); c++) {
+					String id = ((Field) fields.get(c)).getId();
+					if ("Field.work".equals(id) || ("Field.name".equals(id) && position == fields.size())) //$NON-NLS-1$ //$NON-NLS-2$
+						position = c + 1;
+				}
+				for (int i = 0; i < ids.length; i++)
+					fields = fields.insertField(position + i, FieldDictionary.getInstance().getFieldFromId(ids[i]));
+			}
+			sp.setFieldArray(fields);
 		}
 	}
 	public class ImportUlnlAction extends MenuActionsMap.DocumentMenuAction {
@@ -2490,6 +2532,29 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 		//return container instanceof Applet;
     }
     
+    private static final int MAX_OUTLINE_LEVEL = 10;
+    /** Ribbon combo box that shows the task sheet down to the chosen outline level */
+    private JComponent createOutlineLevelPanel() {
+    	String[] levels = new String[MAX_OUTLINE_LEVEL + 1];
+    	levels[0] = Messages.getString("OutlineLevel.All"); //$NON-NLS-1$
+    	for (int l = 1; l <= MAX_OUTLINE_LEVEL; l++)
+    		levels[l] = String.valueOf(l);
+    	final JComboBox combo = new JComboBox(levels);
+    	combo.setToolTipText(Messages.getString("OutlineLevel.Tooltip")); //$NON-NLS-1$
+    	combo.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				setMeAsLastGraphicManager();
+				int index = combo.getSelectedIndex();
+				if (index >= 0 && getCurrentFrame() != null)
+					getCurrentFrame().doExpandToLevel(index == 0 ? Integer.MAX_VALUE : index);
+			}
+		});
+    	JPanel panel = new JPanel(new GridLayout(3, 1));
+    	panel.add(new JLabel(Messages.getString("OutlineLevel.Label"))); //$NON-NLS-1$
+    	panel.add(combo);
+    	return panel;
+    }
+
     public void setRibbon(JRibbonFrame frame, MenuManager menuManger){
     	
     	
@@ -2504,6 +2569,8 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 				if ("FiltersRibbonBand".equals(ribbonBandName)){
 					return filtersPanel;
 				}
+				if ("ReportLevelRibbonBand".equals(ribbonBandName))
+					return createOutlineLevelPanel();
 				else return null;
 			}
 		};

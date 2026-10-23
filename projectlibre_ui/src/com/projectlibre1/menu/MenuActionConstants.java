@@ -146,6 +146,8 @@ public interface MenuActionConstants {
 	public static final String ACTION_IMPORT_ULNL             = "ImportUlnl";
 	public static final String ACTION_EXPORT_WBS_EXCEL        = "ExportWbsExcel";
 	public static final String ACTION_IMPORT_WBS_EXCEL        = "ImportWbsExcel";
+	public static final String ACTION_EFFORT_REPORT          = "EffortReport";
+	public static final String ACTION_EFFORT_COLUMNS         = "EffortColumns";
 	public static final String ACTION_SAVE_BASELINE           = "SaveBaseline";
 	public static final String ACTION_CLEAR_BASELINE          = "ClearBaseline";
 	public static final String ACTION_LOCALE		          = "LocaleAction";

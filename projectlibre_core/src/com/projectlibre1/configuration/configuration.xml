@@ -297,7 +297,11 @@
 			</field>
 			<field property="critical" id="Field.critical"
 				readOnly="true" />
-			
+			<!-- effort of the work: MH can be edited like the work, MD = MH / 8 and MM = MD / 22 cannot. Summaries compute their own value from the leaf tasks -->
+			<field property="manHours" id="Field.manHours" sum="This" />
+			<field property="manDays" id="Field.manDays" readOnly="true" sum="This" />
+			<field property="manMonths" id="Field.manMonths" readOnly="true" sum="This" />
+
 		</class>
 		<class name="com.projectlibre1.pm.snapshot.BaselineScheduleFields">
 			<!-- baseline fields are read only.  This is good PM practice.  MSP allows you to modify them, which is dangerous -->

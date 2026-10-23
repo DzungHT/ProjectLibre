@@ -623,6 +623,15 @@ public class DocumentFrame extends NamedFrame implements
 		ss.getCache().expandOneLevel(expand);
 	}
 
+	/** Shows the tasks down to an outline level, Integer.MAX_VALUE for all */
+	public void doExpandToLevel(int level) {
+		SpreadSheet ss = getActiveSpreadSheet();
+		if (ss == null || ss.getCache() == null)
+			return;
+		ss.finishCurrentOperations();
+		ss.getCache().expandToLevel(level);
+	}
+
 	public void doIndent() {
 		SpreadSheet ss = getActiveSpreadSheet();
 		if (ss !=null)

@@ -389,6 +389,16 @@ public class ReferenceNodeModelCache implements ObjectEvent.Listener, HierarchyL
 		}
 		update();
 	}
+	public void expandToLevel(int level){
+		for (Iterator i=nodeCache.getCacheIterator();i.hasNext();){
+			GraphicNode node=(GraphicNode)i.next();
+			if (!node.isComposite()) continue;
+			boolean expand=node.getLevel()<level;
+			if (expand&&!node.isFetched()) node.fetch(); // for subprojects
+			node.setCollapsed(!expand);
+		}
+		update();
+	}
 	
 //edges
 	public void buildEdges(){

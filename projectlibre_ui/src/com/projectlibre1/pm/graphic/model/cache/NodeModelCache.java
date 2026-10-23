@@ -113,6 +113,8 @@ public interface NodeModelCache extends TreeModel{
 	public void changeCollapsedState(GraphicNode node);
 	public void expandNodes(List nodes, boolean expand);
 	public void expandOneLevel(boolean expand);
+	/** Shows the tasks down to an outline level: summaries above it are expanded, the others collapsed */
+	public void expandToLevel(int level);
 	
 	public void newNode(GraphicNode node);
 	
