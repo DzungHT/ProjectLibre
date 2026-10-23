@@ -2595,7 +2595,7 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 				if ("FiltersRibbonBand".equals(ribbonBandName)){
 					return filtersPanel;
 				}
-				if ("ReportLevelRibbonBand".equals(ribbonBandName))
+				if ("ReportLevelRibbonBand".equals(ribbonBandName) || "TaskOutlineLevel".equals(ribbonBandName))
 					return createOutlineLevelPanel();
 				else return null;
 			}

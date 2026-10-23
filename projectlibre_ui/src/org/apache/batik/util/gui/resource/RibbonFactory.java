@@ -162,7 +162,9 @@ public class RibbonFactory extends ResourceManager {
 		return result;
 	}
 
-	
+	/** Prefix of a band entry built by the CustomRibbonBandGenerator instead of a button, e.g. @TaskOutlineLevel */
+	public static final String CUSTOM_COMPONENT_PREFIX="@";
+
 	public AbstractRibbonBand<?> createRibbonBand(String name, CustomRibbonBandGenerator customBandsGenerator) throws MissingResourceException, ResourceFormatException, MissingListenerException {
 		String title=getString(name+".title");
 		JRibbonBand result=new JRibbonBand(title,null);
@@ -183,6 +185,11 @@ public class RibbonFactory extends ResourceManager {
 		for (String s : buttons){
 			if (s.equals(SEPARATOR)) {
 				result.startGroup();
+			} else if (s.startsWith(CUSTOM_COMPONENT_PREFIX)) {
+				// component built by the generator, placed among the buttons of the band
+				JComponent component=customBandsGenerator.createRibbonComponent(s.substring(CUSTOM_COMPONENT_PREFIX.length()));
+				if (component!=null)
+					result.addRibbonComponent(component instanceof JRibbonComponent?(JRibbonComponent)component:new JRibbonComponent(component),3);
 			} else {
 				RibbonElementPriority priority=RibbonElementPriority.MEDIUM;
 				if (s.endsWith(".TOP")){
@@ -199,7 +206,7 @@ public class RibbonFactory extends ResourceManager {
 //				} catch (MissingResourceException e) {}
 //				if (visible)
 //					result.add(button);
-				
+
 				result.addCommandButton(button, /*i++ == 0 ? RibbonElementPriority.TOP :*/ priority);
 				
 			}
