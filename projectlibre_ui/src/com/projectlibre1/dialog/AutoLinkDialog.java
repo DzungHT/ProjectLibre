@@ -161,6 +161,19 @@ public final class AutoLinkDialog extends AbstractDialog {
 		return "autoLinkScope" + i; //$NON-NLS-1$
 	}
 
+	/** The options last chosen, linking the activities, to run Auto Link without the dialog (Auto Schedule) */
+	public static AutoLinkOptions savedOptions(boolean linkSequences) {
+		Preferences preferences = Preferences.userNodeForPackage(AutoLinkDialog.class);
+		String[] codes = UlnlWbsParser.DEFAULT_ACTIVITY_CODES;
+		int[] values = new int[codes.length - 1];
+		for (int i = 0; i < values.length; i++)
+			values[i] = preferences.getInt(scopePreference(i), DEFAULT_SCOPES[Math.min(i, DEFAULT_SCOPES.length - 1)]);
+		AutoLinkOptions options = new AutoLinkOptions(codes, values, UlnlWbsParser.LANE_ACTIVITY_CODES);
+		options.setLinkSequences(linkSequences);
+		options.setActivityNames(UlnlWbsParser.DEFAULT_ACTIVITY_NAMES);
+		return options;
+	}
+
 	protected boolean bind(boolean get) {
 		if (get)
 			return true;

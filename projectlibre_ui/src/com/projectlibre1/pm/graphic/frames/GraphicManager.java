@@ -145,11 +145,14 @@ import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.dialog.AutoScheduleDialog;
 import com.projectlibre1.dialog.LaborCatalogDialog;
 import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
+import com.projectlibre1.pm.scheduling.auto.AutoScheduleJob;
+import com.projectlibre1.pm.scheduling.auto.AutoScheduler;
 import com.projectlibre1.dialog.EffortReportDialog;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
 import com.projectlibre1.dialog.ImportWbsExcelDialog;
@@ -1057,6 +1060,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
+		actionsMap.addHandler(ACTION_AUTO_SCHEDULE, new AutoScheduleAction());
 		actionsMap.addHandler(ACTION_UPDATE_ULNL, new UpdateUlnlAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
@@ -1814,6 +1818,64 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 				Alert.error(e.getMessage(), f);
 			} finally {
 				linker.close();
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Assigns and schedules the tasks, see AutoScheduleJob, with a progress dialog */
+	public class AutoScheduleAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			final DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			AutoScheduleDialog.Result result = AutoScheduleDialog.doDialog(frame.getProject());
+			if (result == null)
+				return;
+			final AutoScheduleJob job = new AutoScheduleJob(frame.getProject(), result.getLinkPlan(), result.getOptions(), frame);
+			final String[] messages = new String[AutoScheduleJob.DONE];
+			messages[AutoScheduleJob.LINKING] = Messages.getString("AutoSchedule.Linking"); //$NON-NLS-1$
+			messages[AutoScheduleJob.SCHEDULING] = Messages.getString("AutoSchedule.Scheduling"); //$NON-NLS-1$
+			messages[AutoScheduleJob.ASSIGNING] = Messages.getString("AutoSchedule.Assigning"); //$NON-NLS-1$
+			messages[AutoScheduleJob.RECALCULATING] = Messages.getString("Text.recalculatingSchedule"); //$NON-NLS-1$
+			messages[AutoScheduleJob.CHECKING] = Messages.getString("AutoSchedule.Checking"); //$NON-NLS-1$
+			Frame f = getFrameInstance();
+			try {
+				BusyOperationDialog.run(f, Messages.getString("AutoSchedule.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) {
+							started = true;
+							dialog.setCancelable(false); // the project is changed from the first step
+							dialog.setProgress(messages[job.getPhase()], 0, job.getTotal());
+							dialog.endSlice();
+							return false;
+						}
+						if (job.next())
+							return true;
+						dialog.setProgress(messages[Math.min(job.getPhase(), messages.length - 1)], job.getDone(), job.getTotal());
+						if (job.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (AutoScheduler.CircularLinksException e) {
+				StringBuilder names = new StringBuilder();
+				for (int i = 0; i < Math.min(5, e.getTasks().size()); i++) {
+					Object task = e.getTasks().get(i).getSource();
+					names.append("\n- ").append(task instanceof Task ? ((Task) task).getId() + ": " + ((Task) task).getName() : String.valueOf(task)); //$NON-NLS-1$ //$NON-NLS-2$
+				}
+				Alert.error(java.text.MessageFormat.format(Messages.getString("AutoSchedule.CircularError"), String.valueOf(e.getTasks().size())) + names, f); //$NON-NLS-1$
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+			} finally {
+				job.close();
 			}
 		}
 		protected boolean allowed(boolean enable) {

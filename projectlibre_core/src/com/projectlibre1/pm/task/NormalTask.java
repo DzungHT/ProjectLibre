@@ -1934,6 +1934,25 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 		this.lane = emptyToNull(lane);
 	}
 	/**
+	 * Role and required skill for which Auto Schedule found no resource for this task, null when it found one.
+	 * The task shows a warning while no resource of this role with this skill is assigned to it, see
+	 * AutoScheduleWarning
+	 */
+	private String autoScheduleRole = null;
+	private String autoScheduleSkill = null;
+
+	public String getAutoScheduleRole() {
+		return autoScheduleRole;
+	}
+	public String getAutoScheduleSkill() {
+		return autoScheduleSkill;
+	}
+	/** Role and required skill (null if none) without resource, null role when Auto Schedule found one */
+	public void setAutoScheduleMissing(String role, String skill) {
+		this.autoScheduleRole = emptyToNull(role);
+		this.autoScheduleSkill = role == null ? null : emptyToNull(skill);
+	}
+	/**
 	 * Cancelled task, like an inactive task of MS Project: its remaining work is set to 0 so that it does not
 	 * extend the schedule, and kept to be restored when it is un-cancelled. Its links, assignments, actual work
 	 * and original estimate are kept. The cancel date also identifies the tasks cancelled together: un-cancelling
@@ -2306,6 +2325,8 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			n.functionCode = functionCode;
 			n.activity = activity;
 			n.lane = lane;
+			n.autoScheduleRole = autoScheduleRole;
+			n.autoScheduleSkill = autoScheduleSkill;
 			n.cancelled = cancelled;
 			n.cancelDate = cancelDate;
 			n.cancelReason = cancelReason;

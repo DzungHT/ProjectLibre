@@ -64,6 +64,7 @@ import com.projectlibre1.configuration.Configuration;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.HasTaskIndicators;
 import com.projectlibre1.pm.availability.AvailabilityWarning;
+import com.projectlibre1.pm.scheduling.auto.AutoScheduleWarning;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.SubProj;
 import com.projectlibre1.pm.task.Task;
@@ -86,6 +87,7 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 	protected JLabel delegated;
 	protected JLabel delegatedMe;
 	protected JLabel unavailable;
+	protected JLabel noResource;
 	Field constraintTypeField = Configuration.getFieldFromId("Field.constraintType"); //$NON-NLS-1$
 	Field constraintDateField = Configuration.getFieldFromId("Field.constraintDate"); //$NON-NLS-1$
 	Field deadlineField = Configuration.getFieldFromId("Field.deadline"); //$NON-NLS-1$
@@ -125,6 +127,8 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 		delegatedMe.setOpaque(false);
 		unavailable = new JLabel(" ",IconManager.getIcon("indicator.availability"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
 		unavailable.setOpaque(false);
+		noResource = new JLabel(" ",IconManager.getIcon("indicator.availability"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
+		noResource.setOpaque(false);
 	}
 	
 	
@@ -169,6 +173,12 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 				for (String period : periods)
 					text.append("<br>- ").append(period); //$NON-NLS-1$
 				text.append("<br>"); //$NON-NLS-1$
+			}
+			String missing = AutoScheduleWarning.missingResource((NormalTask)indicators); // see AutoScheduleWarning
+			if (missing != null) {
+				setLook(noResource,isSelected,hasFocus);
+				label.add(noResource);
+				text.append(missing).append("<br>"); //$NON-NLS-1$
 			}
 		}
 

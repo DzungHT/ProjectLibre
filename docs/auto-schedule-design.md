@@ -88,7 +88,7 @@ Resource có nhiều khoảng Available From (ví dụ 0% trước ngày vào d�
   Đổi level thì quy từ point cũ sang point mới; role/level không có trong danh mục thì coi point = 1.
 - Cột Max Units trên bảng resource của ProjectLibre chỉ hiện khoảng đang hiệu lực **hôm nay**.
 - Phân công mới lấy Max Units của khoảng chứa **ngày bắt đầu task**; nếu khoảng đó 0% thì lấy khoảng đầu tiên sau đó có units > 0.
-- ProjectLibre không tự dời task tới ngày resource bắt đầu available (không có resource leveling), và biểu đồ quá tải chỉ dùng Max Units hôm nay. Auto Schedule (P2) tự xếp task trong các khoảng available.
+- ProjectLibre không tự dời task tới ngày resource bắt đầu available (không có resource leveling), và biểu đồ quá tải chỉ dùng Max Units hôm nay. Auto Schedule (P2, đã làm) tự xếp task trong các khoảng available.
 - Resource được giao trong khoảng Max Units 0% (trước ngày vào dự án, sau ngày rời dự án): task giữ nguyên ngày, cột Indicators hiện icon cảnh báo (tam giác vàng), tooltip ghi tên resource và khoảng không available. Bỏ qua task đã hoàn thành hoặc đã cancel.
 
 ### 3.3 Field cần thêm
@@ -149,7 +149,7 @@ Auto Link các task cùng làn được nối thành chuỗi). Đổi thành K�
 - Chữ trong Auto Link ("mỗi Lane một chuỗi") → "mỗi kỹ năng yêu cầu một chuỗi".
 - Tên field lưu trong file dự án giữ nguyên để mở được các file cũ; chỉ đổi tên hiển thị.
 
-## 5. Phụ thuộc
+## 5. Phụ thuộc (đã làm ở P2)
 
 Engine chỉ dùng **phụ thuộc logic**: các link giữa hoạt động của Auto Link (GP → PT BE, PT FE → KT) và link làm tay.
 
@@ -159,9 +159,32 @@ một người. Nếu giữ thì thêm người không rút ngắn được lị
 
 Task huỷ hoặc không có work được bỏ qua, như Auto Link.
 
-## 6. Engine lập lịch
+Auto Link chạy lại với các phạm vi (dòng / chức năng) đã chọn lần trước trong hộp thoại Auto Link, luôn link giữa các
+hoạt động. Ngoài link của Auto Link, engine dùng mọi link đang bật của dự án, đủ 4 loại FS/SS/FF/SF và lag. Link tới/từ
+task cha (summary) đi qua 2 điểm của task cha: điểm bắt đầu (các task con bắt đầu sau) và điểm kết thúc (từ task con đầu
+tiên tới task con cuối cùng), như ProjectLibre tính. Link vòng lặp: báo lỗi, không ghi gì.
 
-Java thuần, không phụ thuộc UI, có unit test.
+## 6. Engine lập lịch (đã làm ở P2)
+
+Java thuần, không phụ thuộc UI, có unit test. Package `com.projectlibre1.pm.scheduling.auto` (projectlibre_core):
+
+| Lớp | Vai trò |
+|---|---|
+| `AutoScheduler` | Engine: CPM lấy LS, list scheduling |
+| `AutoTask`, `AutoResource`, `WorkingTime` | Đầu vào/kết quả của engine, lịch làm việc |
+| `AutoScheduleModel`, `AutoScheduleOptions` | Đọc dự án thành task/resource cho engine; ngày bắt đầu, giữ/giao lại, ánh xạ hoạt động → role |
+| `AutoScheduleJob` | Chạy Auto Link → engine → ghi vào dự án, từng bước cho hộp thoại tiến trình, một lần Undo |
+| `AutoScheduleWarning` | Cảnh báo task không tìm được người |
+
+Phân loại task lá:
+
+| Loại | Điều kiện | Xử lý |
+|---|---|---|
+| Xếp lịch | Có hoạt động ánh xạ ra role, không huỷ, có work, chưa bắt đầu | Chọn resource, tính ngày |
+| Giữ ngày | Đã bắt đầu (Actual Start) hoặc đã xong | Giữ ngày; resource được giao bận trong khoảng đó |
+| Bị động | Còn lại (PM/QA, huỷ, không work, mốc...) | Giữ thời lượng và Leveling Delay, chạy theo link |
+
+Ràng buộc Start No Earlier Than / Must Start On của task được tôn trọng (ngày sớm nhất).
 
 **Đầu vào:** task lá có hoạt động (role, skill yêu cầu, effort ULNL), phụ thuộc logic, nhóm resource
 (role, kỹ năng, Max Units, khoảng thời gian có thể tham gia (Available From/To), có sẵn hay TBD (Generic)), lịch dự án, ngày bắt đầu.
@@ -176,17 +199,43 @@ Java thuần, không phụ thuộc UI, có unit test.
    Bằng nhau thì ưu tiên người ít skill hơn, để dành người Fullstack cho chỗ thiếu.
 4. Cập nhật ngày rảnh của resource, đưa các task sau đã đủ điều kiện vào hàng đợi.
 
-O(n log n × số resource mỗi role). Tính theo ngày làm việc của lịch dự án.
+O(n log n × số resource mỗi role). Tính theo ngày làm việc của lịch dự án (link, task không người) và lịch của
+resource (thời lượng).
 
-**Task đã giao sẵn:** tuỳ chọn *giữ phân công hiện có* (chỉ tính lại ngày) hoặc *giao lại tất cả*.
+Chi tiết đã làm:
 
-**Ghi kết quả vào dự án:** tạo assignment và đẩy task tới ngày bắt đầu đã tính.
-Hai cách, chọn ở P2 sau khi thử:
-- `levelingDelay` của assignment (đã được cộng trong `Assignment.calcTotalDelay()`): đúng ý nghĩa "trễ do nguồn lực",
-  xoá được bằng cách đặt về 0.
-- Ràng buộc Start No Earlier Than: chắc chắn hiển thị đúng, nhưng lẫn với ràng buộc người dùng đặt.
+- "Ngày rảnh" của resource là danh sách khoảng bận đã gộp: task được chèn vào khoảng trống giữa các task trước của
+  resource nếu đủ chỗ, vì thứ tự xếp theo LS chứ không theo thời gian.
+- Trong khoảng tham gia: task bắt đầu trong khoảng Max Units > 0, units = Max Units của khoảng chứa ngày bắt đầu, và
+  không được chạy qua khoảng 0% (ví dụ nghỉ giữa dự án); nếu chạy qua thì bắt đầu ở khoảng có units tiếp theo.
+- Không resource nào hợp lệ (thiếu role/kỹ năng, hoặc không còn khoảng available): task giữ thời lượng, bắt đầu khi đủ
+  điều kiện, cột Indicators có icon cảnh báo (tooltip ghi role và kỹ năng thiếu). Icon mất khi task được giao resource
+  đúng role và kỹ năng, hoặc khi chạy lại tìm được người.
+- Thử với 3000 task, 16 resource: khoảng 1,2 giây cả Auto Link, xếp lịch, ghi và tính lại lịch.
 
-Cả thao tác ghi là một lần Undo.
+**Task đã giao sẵn:** tuỳ chọn *giữ phân công hiện có* (chỉ tính lại ngày) hoặc *giao lại tất cả*. Giữ phân công: task
+giữ resource và thời lượng hiện có, bắt đầu khi mọi resource của nó available và rảnh.
+
+**Ghi kết quả vào dự án:** tạo assignment với units = Max Units và đẩy task tới ngày bắt đầu đã tính.
+Đã thử ở P2 (task A 40h → B 40h, DEV L4, đẩy B 5 ngày công):
+
+| Cách | Kết quả |
+|---|---|
+| `levelingDelay` của assignment | **Không dùng được**: task vẫn bắt đầu theo link (cột Start sai), chỉ assignment bị lùi, Gantt có khoảng trống |
+| **`levelingDelay` của task** (field *Leveling Delay* có sẵn) | **Đã chọn**: CPM cộng vào ngày bắt đầu (`TaskSchedule`), lưu trong file, có cột Leveling Delay, xuất được MPX, không đụng ràng buộc của người dùng, xoá bằng cách đặt về 0 |
+| Ràng buộc Start No Earlier Than | Đúng ngày nhưng ghi đè ràng buộc người dùng đặt |
+
+Leveling Delay là độ trễ tương đối (giờ làm việc tính từ ngày link cho phép): task trước bị lùi thì task sau lùi theo,
+chạy lại Auto Schedule để tính lại. Sau khi ghi, ProjectLibre tính lại lịch và Auto Schedule so ngày bắt đầu từng task với
+ngày đã tính; lệch (do làm tròn, lịch riêng của resource) thì sửa Leveling Delay, tối đa 5 lần.
+
+Task Fixed Work giữ nguyên Work: ProjectLibre làm tròn thời lượng tới mili-giây nên Work có thể lệch dưới 1 giây
+(80 giờ → 79,99997 giờ, như khi tự giao resource có units 159%).
+
+Cả thao tác ghi (link, assignment, Leveling Delay, cảnh báo) là một lần Undo.
+
+**Giao diện tạm (P2):** nút *Tự động xếp lịch* (nhóm *Lập lịch* trên tab HTD - VTIT), hộp thoại chọn ngày bắt đầu
+(mặc định ngày bắt đầu dự án; không sớm hơn ngày đó) và giữ/giao lại phân công, xem trước số task và số resource có role.
 
 ## 7. Tính nguồn lực theo deadline (Loại 1 và 3)
 
@@ -239,7 +288,7 @@ Chạy trong `JobProgressDialog` như import ULNL. Lưu các lựa chọn bằng
 | Giai đoạn | Nội dung | Kết quả |
 |---|---|---|
 | P1 (đã làm) | Labor Category (import CSV, quy đổi effort), danh mục kỹ năng, đổi Lane → Kỹ năng yêu cầu, field resource (role, level, kỹ năng; TBD dùng cờ Generic có sẵn) | Gán resource có role/level/kỹ năng và tính đúng work |
-| P2 | Engine + ghi vào dự án, Auto Link không chuỗi; thử `levelingDelay` | Loại 2 chạy được (tạm thời chưa có wizard đầy đủ) |
+| P2 (đã làm) | Engine + ghi vào dự án (Leveling Delay của task), Auto Link không chuỗi, hộp thoại tạm | Loại 2 chạy được (tạm thời chưa có wizard đầy đủ) |
 | P3 | Tính nguồn lực theo deadline | Loại 1, 3 |
 | P4 | Wizard | Giao diện hoàn chỉnh |
 | P5 | Báo cáo Excel | Báo cáo nguồn lực |
