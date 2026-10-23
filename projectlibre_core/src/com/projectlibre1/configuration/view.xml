@@ -73,6 +73,12 @@
 		<format id="Bar.critical" row="1" layer="1" intervalGenerator="com.projectlibre1.pm.graphic.gantt.GanttBarIntervalGenerator"  from="Field.start" to="Field.finish">
 			<middle shapeName="FULL_HEIGHT" colorName="RED" paintName="DEFAULT" strokeName="FRAMED"/>
 		</format>
+		<format id="Bar.cancelled" row="1" layer="1" intervalGenerator="com.projectlibre1.pm.graphic.gantt.GanttBarIntervalGenerator"  from="Field.start" to="Field.finish">
+			<middle shapeName="FULL_HEIGHT" colorName="LIGHT_GRAY" paintName="DEFAULT" strokeName="FRAMED"/>
+		</format>
+		<format id="Bar.cancelledMilestone" row="1" layer="1" intervalGenerator="com.projectlibre1.pm.graphic.gantt.GanttBarIntervalGenerator"  from="Field.finish" to="Field.finish">
+			<start shapeName="DIAMOND" colorName="GRAY" paintName="SOLID"/>
+		</format>
 <!--
 		<format id="Bar.late"  row="1" layer="1" intervalGenerator="com.projectlibre1.pm.graphic.gantt.GanttBarIntervalGenerator"  from="Field.start" to="Field.finish">
 			<middle shapeName="FULL_HEIGHT" colorName="PURPLE" paintName="DEFAULT" strokeName="FRAMED"/>
@@ -298,6 +304,8 @@
 -->		
 			<style id="Styles.Bar.Row.summary" formatId="Bar.summary" formulaClass="com.projectlibre1.scripting.formulas.SummaryTaskFormula"/>
 			<style id="Styles.Bar.Row.milestone" formatId="Bar.milestone" formulaClass="com.projectlibre1.scripting.formulas.MilestoneTaskFormula"/>
+			<style id="Styles.Bar.Row.cancelled" formatId="Bar.cancelled" formulaClass="com.projectlibre1.scripting.formulas.CancelledTaskFormula"/>
+			<style id="Styles.Bar.Row.cancelledMilestone" formatId="Bar.cancelledMilestone" formulaClass="com.projectlibre1.scripting.formulas.CancelledMilestoneFormula"/>
 			<style id="Styles.Bar.Row.deadline" formatId="Bar.deadline" formulaClass="com.projectlibre1.scripting.formulas.DeadlineTaskFormula"/>
 			<style id="Styles.Bar.Row.assignment" formatId="Bar.assignment" formulaClass="com.projectlibre1.scripting.formulas.AssignmentFormula"/>
 			<style id="Styles.Bar.Row.baseline" formatId="Bar.baseline" formulaClass="com.projectlibre1.scripting.formulas.BaselineTaskFormula"/>
@@ -975,7 +983,7 @@
 	<views>
 		<view id="View.Gantt">
 			<transform
-				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.DateRange,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks,Filter.StartingWithinWeek,Filter.StartingWithinTwoWeeks"
+				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.DateRange,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.ActiveTasks,Filter.CancelledTasks,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks,Filter.StartingWithinWeek,Filter.StartingWithinTwoWeeks"
 				sorters="Sorter.None,Sorter.Name,Sorter.DurationThenCost,Sorter.StartDate,Sorter.FinishDate,Sorter.Duration,Sorter.Cost,Sorter.CostOverbudget,Sorter.CompleteIncomplete,Sorter.Critical,Field.priority"
 				groupers="Grouper.None,Grouper.CriticalThenDuration,Grouper.CompleteIncomplete,Grouper.Critical,Grouper.Duration,Grouper.ResourceNames"
 				>
@@ -984,7 +992,7 @@
 		</view>
 		<view id="View.OfflineGantt">
 			<transform
-				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.DateRange,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks"
+				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.DateRange,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.ActiveTasks,Filter.CancelledTasks,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks"
 				sorters="Sorter.None,Sorter.Name,Sorter.DurationThenCost,Sorter.StartDate,Sorter.FinishDate,Sorter.Duration,Sorter.Cost,Sorter.CostOverbudget,Sorter.CompleteIncomplete,Sorter.Critical,Field.priority"
 				groupers="Grouper.None,Grouper.CriticalThenDuration,Grouper.CompleteIncomplete,Grouper.Critical,Grouper.Duration,Grouper.ResourceNames"
 				>
@@ -1037,7 +1045,7 @@
 		</view>
 		<view id="View.Network">
 			<transform
-				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasksOrMilestones,Filter.Milestones,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks,Filter.StartingWithinWeek,Filter.StartingWithinTwoWeeks"
+				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasksOrMilestones,Filter.Milestones,Filter.ActiveTasks,Filter.CancelledTasks,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks,Filter.StartingWithinWeek,Filter.StartingWithinTwoWeeks"
 				sorters="Sorter.None,Sorter.Name,Sorter.DurationThenCost,Sorter.StartDate,Sorter.FinishDate,Sorter.Duration,Sorter.Cost,Sorter.CostOverbudget,Sorter.CompleteIncomplete,Sorter.Critical,Field.priority"
 				groupers="Grouper.None"
 				>
@@ -1064,7 +1072,7 @@
 		</view>
 		<view id="View.TaskUsageDetail">
 			<transform
-				filters="Filter.None,Filter.,Filter.MyTasks,CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks,Filter.StartingWithinWeek,Filter.StartingWithinTwoWeeks"
+				filters="Filter.None,Filter.,Filter.MyTasks,CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.ActiveTasks,Filter.CancelledTasks,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks,Filter.StartingWithinWeek,Filter.StartingWithinTwoWeeks"
 				sorters="Sorter.None,Sorter.Name,Sorter.DurationThenCost,Sorter.StartDate,Sorter.FinishDate,Sorter.Duration,Sorter.Cost,Sorter.CostOverbudget,Sorter.CompleteIncomplete,Sorter.Critical,Field.priority"
 				groupers="Grouper.None,Grouper.CriticalThenDuration,Grouper.CompleteIncomplete,Grouper.Critical,Grouper.Duration"
 				>
@@ -1129,7 +1137,7 @@
 		</view>
 		<view id="View.TaskReport">
 			<transform
-				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.DateRange,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks"
+				filters="Filter.None,Filter.TaskName,Filter.MyTasks,Filter.DateRange,Filter.CompletedTasks,Filter.CostOverbudgetTasks,Filter.CriticalTasks,Filter.InProgressTasks,Filter.IncompleteTasks,Filter.LateOrOverbudgetTasks,Filter.NormalTasks,Filter.Milestones,Filter.ActiveTasks,Filter.CancelledTasks,Filter.SlippedTasks,Filter.SummaryTasks,Filter.Flag1,Filter.Flag2,Filter.Flag3,Filter.TasksWithEstimatedDurations,Filter.UnstartedTasks"
 				sorters="Sorter.None,Sorter.Name,Sorter.DurationThenCost,Sorter.StartDate,Sorter.FinishDate,Sorter.Duration,Sorter.Cost,Sorter.CostOverbudget,Sorter.CompleteIncomplete,Sorter.Critical"
 				groupers="Grouper.None,Grouper.CriticalThenDuration,Grouper.CompleteIncomplete,Grouper.Critical,Grouper.Duration"
 				>
@@ -1250,6 +1258,20 @@
 				<formulaText>
 					<![CDATA[
 						return task.milestone;
+					]]>
+				</formulaText>
+			</filter>
+			<filter id="Filter.ActiveTasks" type="task" showEmptySummaries="false">
+				<formulaText>
+					<![CDATA[
+						return !task.cancelled;
+					]]>
+				</formulaText>
+			</filter>
+			<filter id="Filter.CancelledTasks" type="task" showEmptySummaries="false">
+				<formulaText>
+					<![CDATA[
+						return task.cancelled;
 					]]>
 				</formulaText>
 			</filter>

@@ -937,6 +937,10 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 	public boolean isCritical() {
 		return false;
 	}
+	/** True for a cancelled task, see NormalTask */
+	public boolean isCancelled() {
+		return false;
+	}
 	/** if task is currently critical or will become critical after CP */
 	public boolean isOrWasCritical() {
 		if (isCritical())

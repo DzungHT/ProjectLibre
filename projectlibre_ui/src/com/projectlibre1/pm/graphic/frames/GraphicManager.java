@@ -1043,6 +1043,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_ESTIMATE_COLUMNS, new EstimateColumnsAction());
 		actionsMap.addHandler(ACTION_SET_ORIGINAL_ESTIMATE, new SetOriginalEstimateAction());
 		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
+		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
+		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1672,6 +1674,23 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			setMeAsLastGraphicManager();
 			if (isDocumentActive() && getCurrentFrame().doOriginalEstimate(false) == 0)
 				Alert.warn(Messages.getString("OriginalEstimate.NothingReset"), getFrameInstance()); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Cancels or un-cancels the selected tasks */
+	public class CancelTaskAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final boolean cancel;
+		public CancelTaskAction(boolean cancel) {
+			this.cancel = cancel;
+		}
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive() && getCurrentFrame().doCancelTasks(cancel) == 0)
+				Alert.warn(Messages.getString(cancel ? "CancelTask.NothingCancelled" : "CancelTask.NothingUncancelled"), getFrameInstance()); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;

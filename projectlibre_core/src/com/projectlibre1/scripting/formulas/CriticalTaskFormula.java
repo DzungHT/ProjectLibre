@@ -59,7 +59,7 @@ import com.projectlibre1.pm.task.Task;
 
 public class CriticalTaskFormula extends TaskFormula {
 	public boolean evaluateTask(Task task){
-		return task.isNormal()&&task.isCritical();
+		return task.isNormal()&&task.isCritical()&&!task.isCancelled();
 	}
 
 }

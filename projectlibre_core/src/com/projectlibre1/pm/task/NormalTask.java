@@ -1879,7 +1879,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	 * Returns true if the work was changed
 	 */
 	public boolean resetWorkToOriginalEstimate() {
-		if (isWbsParent() || originalEstimate == 0 || getActualWork(null) != 0)
+		if (isWbsParent() || originalEstimate == 0 || cancelled || getActualWork(null) != 0)
 			return false;
 		long work = Duration.millis(getWork(null));
 		if (isWorkOriginalEstimate(work))
@@ -1933,6 +1933,69 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	public void setLane(String lane) {
 		this.lane = emptyToNull(lane);
 	}
+	/**
+	 * Cancelled task, like an inactive task of MS Project: its remaining work is set to 0 so that it does not
+	 * extend the schedule, and kept to be restored when it is un-cancelled. Its links, assignments, actual work
+	 * and original estimate are kept. The cancel date also identifies the tasks cancelled together: un-cancelling
+	 * a summary un-cancels the tasks below it that were cancelled with it. A summary is flagged cancelled when it
+	 * is cancelled or when all its children are, see the cancel commands.
+	 */
+	private boolean cancelled = false;
+	private long cancelDate = 0;
+	private String cancelReason = null;
+	private long workBeforeCancel = 0; // remaining work when cancelled, millis
+
+	public boolean isCancelled() {
+		return cancelled;
+	}
+	public long getCancelDate() {
+		return cancelDate;
+	}
+	public String getCancelReason() {
+		return cancelReason;
+	}
+	public void setCancelReason(String cancelReason) {
+		this.cancelReason = emptyToNull(cancelReason);
+	}
+	public boolean isReadOnlyCancelReason(FieldContext fieldContext) {
+		return !cancelled;
+	}
+	public long getWorkBeforeCancel() {
+		return workBeforeCancel;
+	}
+	/** Cancels the task: a leaf task keeps its remaining work and gets none. Does nothing if already cancelled */
+	public void cancel(long date) {
+		if (cancelled)
+			return;
+		if (!isWbsParent()) {
+			workBeforeCancel = Duration.millis(getRemainingWork());
+			// each assignment directly: setWork() does not change the assignments ending before the task
+			for (Iterator i = getAssignments().iterator(); i.hasNext();)
+				((Assignment) i.next()).adjustRemainingDuration(0, false);
+		}
+		cancelled = true;
+		cancelDate = date;
+		setDirty(true);
+	}
+	/** Un-cancels the task: a leaf task gets back the remaining work it had when cancelled */
+	public void uncancel() {
+		if (!cancelled)
+			return;
+		cancelled = false;
+		cancelDate = 0;
+		cancelReason = null;
+		if (!isWbsParent() && workBeforeCancel > 0)
+			setWork(getActualWork(null) + workBeforeCancel);
+		workBeforeCancel = 0;
+		setDirty(true);
+	}
+	/** Sets the cancel information without changing the work, for undo */
+	public void setCancelState(long cancelDate, String cancelReason, long workBeforeCancel) {
+		this.cancelDate = cancelDate;
+		this.cancelReason = cancelReason;
+		this.workBeforeCancel = workBeforeCancel;
+	}
+
 	private static String emptyToNull(String s) {
 		if (s == null)
 			return null;
@@ -2243,6 +2306,10 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			n.functionCode = functionCode;
 			n.activity = activity;
 			n.lane = lane;
+			n.cancelled = cancelled;
+			n.cancelDate = cancelDate;
+			n.cancelReason = cancelReason;
+			n.workBeforeCancel = workBeforeCancel;
 		}
 
 		super.cloneTo(task);

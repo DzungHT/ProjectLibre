@@ -59,7 +59,7 @@ import com.projectlibre1.pm.task.Task;
 
 public class MilestoneTaskFormula extends TaskFormula {
 	public boolean evaluateTask(Task task){
-		return task.isMilestone();
+		return task.isMilestone()&&!task.isCancelled();
 	}
 
 }

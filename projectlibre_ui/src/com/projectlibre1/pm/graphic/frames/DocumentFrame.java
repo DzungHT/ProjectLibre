@@ -141,6 +141,7 @@ import com.projectlibre1.pm.task.ProjectEvent;
 import com.projectlibre1.pm.task.ProjectFactory;
 import com.projectlibre1.pm.task.ProjectListener;
 import com.projectlibre1.pm.task.Task;
+import com.projectlibre1.pm.task.TaskCancellation;
 import com.projectlibre1.preference.GlobalPreferences;
 import com.projectlibre1.session.LoadOptions;
 import com.projectlibre1.undo.UndoController;
@@ -520,7 +521,7 @@ public class DocumentFrame extends NamedFrame implements
 				Object oldValue = to.getValue(task, null);
 				Object value;
 				if (fromWork) {
-					if (task.isWorkOriginalEstimate(task.getWork(null)))
+					if (task.isCancelled() || task.isWorkOriginalEstimate(task.getWork(null))) // a cancelled task has no work
 						continue;
 					value = from.getValue(task, null);
 					try {
@@ -545,6 +546,42 @@ public class DocumentFrame extends NamedFrame implements
 		}
 		return changed;
 	}
+	/**
+	 * Cancels the selected tasks (and the tasks below the selected summaries), or un-cancels them, see TaskCancellation.
+	 * A single undo reverts all. Returns the number of tasks changed, summaries included
+	 */
+	public int doCancelTasks(boolean cancel) {
+		finishAnyOperations();
+		List selection = getSelectedImpls(true);
+		if (selection == null)
+			return 0;
+		Project project = getProject();
+		TaskCancellation cancellation = new TaskCancellation(project, System.currentTimeMillis());
+		for (Iterator i = selection.iterator(); i.hasNext();) {
+			Object impl = i.next();
+			if (!(impl instanceof NormalTask))
+				continue;
+			if (cancel)
+				cancellation.cancel((NormalTask) impl, null);
+			else
+				cancellation.uncancel((NormalTask) impl);
+		}
+		cancellation.finish();
+		int changed = cancellation.getChangedTasks().size();
+		if (changed == 0)
+			return 0;
+		project.beginUndoUpdate();
+		try {
+			TaskCancellation.refresh(project, cancellation.getChangedTasks(), this);
+			UndoableEditSupport undo = project.getUndoController() == null ? null : project.getUndoController().getEditSupport();
+			if (undo != null)
+				undo.postEdit(cancellation.createEdit());
+		} finally {
+			project.endUndoUpdate();
+		}
+		return changed;
+	}
+
 	private static void addLeafTasks(NormalTask task, Set<NormalTask> tasks) {
 		if (!task.isWbsParent()) {
 			tasks.add(task);

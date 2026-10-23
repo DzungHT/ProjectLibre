@@ -309,6 +309,10 @@
 			<field property="functionCode" id="Field.functionCode" />
 			<field property="activity" id="Field.activity" />
 			<field property="lane" id="Field.lane" />
+			<!-- cancelled tasks: set by the Cancel Task and Un-cancel Task commands. The reason can be edited while the task is cancelled -->
+			<field property="cancelled" id="Field.cancelled" readOnly="true" />
+			<field property="cancelReason" id="Field.cancelReason" />
+			<field property="cancelDate" id="Field.cancelDate" date="true" readOnly="true" />
 
 		</class>
 		<class name="com.projectlibre1.pm.snapshot.BaselineScheduleFields">

@@ -59,7 +59,7 @@ import com.projectlibre1.pm.task.Task;
 
 public class SummaryTaskFormula extends TaskFormula {
 	public boolean evaluateTask(Task task){
-		return task.isSummary();
+		return task.isSummary()&&!task.isCancelled();
 	}
 
 }
