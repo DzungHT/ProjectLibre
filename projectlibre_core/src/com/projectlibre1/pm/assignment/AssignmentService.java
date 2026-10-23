@@ -140,7 +140,7 @@ public class AssignmentService {
 //Perhaps one solution would be to replace hierarchy search() with a hash table for mapping impls to nodes
 
 //TODO It throws an event for assignment. A service for updating all the assignments at once should be added.
-					double resourceUnits = Double.isNaN(units) ? TaskDefaultOption.getInstance().getAssignmentUnits(resource) : units;
+					double resourceUnits = Double.isNaN(units) ? TaskDefaultOption.getInstance().getAssignmentUnits(resource, task) : units;
 					Assignment assignment = newAssignment(task,resource,resourceUnits,0,eventSource,true);
 					if (!resource.isLabor()) // for assigning non temporal resources, use the value of 1
 						assignment.setRateUnit(TimeUnit.NON_TEMPORAL);

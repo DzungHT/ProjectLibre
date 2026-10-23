@@ -145,6 +145,8 @@ import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.dialog.LaborCatalogDialog;
+import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
@@ -1052,6 +1054,9 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
+		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
+		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
+		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
 		actionsMap.addHandler(ACTION_UPDATE_ULNL, new UpdateUlnlAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
@@ -1834,17 +1839,50 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		}
 	}
 	/** Shows columns after the Work column of the task sheet (after the name if there is no Work column), or hides them */
+	/** Shows the labor category and skill columns after the name in the resource sheet, or hides them */
+	public class LaborColumnsAction extends ToggleColumnsAction {
+		private static final long serialVersionUID = 1L;
+		public LaborColumnsAction() {
+			super(new String[] {"Field.laborRole", "Field.laborLevel", "Field.laborPoint", "Field.laborPrice", "Field.skills", "Field.generic"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
+		}
+		protected SpreadSheet getSpreadSheet() {
+			DocumentFrame frame = getCurrentFrame();
+			frame.activateResourceView();
+			return frame.getResourceView().getSpreadSheet();
+		}
+	}
+	/** The labor categories: role, level, point and price of a man-month, imported from the NLTC table */
+	public class LaborCatalogAction extends MenuActionsMap.GlobalMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			LaborCatalogDialog.doDialog();
+			if (getCurrentFrame() != null)
+				getCurrentFrame().repaint(); // the points and prices of the resources
+		}
+	}
+	/** The skills of the resources and required skills of the tasks */
+	public class SkillCatalogAction extends MenuActionsMap.GlobalMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			SkillCatalogDialog.doDialog();
+		}
+	}
 	public class ToggleColumnsAction extends MenuActionsMap.DocumentMenuAction {
 		private static final long serialVersionUID = 1L;
 		private final String[] ids;
 		public ToggleColumnsAction(String[] ids) {
 			this.ids = ids;
 		}
+		protected SpreadSheet getSpreadSheet() {
+			return getCurrentFrame().getGanttView().getSpreadSheet();
+		}
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			if (!isDocumentActive())
 				return;
-			SpreadSheet sp = getCurrentFrame().getGanttView().getSpreadSheet();
+			SpreadSheet sp = getSpreadSheet();
 			SpreadSheetFieldArray fields = (SpreadSheetFieldArray) sp.getFieldArray();
 			boolean shown = false;
 			for (int c = fields.size() - 1; c >= 0; c--) {

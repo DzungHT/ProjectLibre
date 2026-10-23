@@ -54,6 +54,8 @@
  * logo it must direct them back to http://www.projectlibre.com. 
  *******************************************************************************/
 package com.projectlibre1.pm.graphic.spreadsheet.renderer;
+import java.util.List;
+
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 
@@ -61,6 +63,7 @@ import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.configuration.Configuration;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.HasTaskIndicators;
+import com.projectlibre1.pm.availability.AvailabilityWarning;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.SubProj;
 import com.projectlibre1.pm.task.Task;
@@ -82,6 +85,7 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 	protected JLabel invalidProject;
 	protected JLabel delegated;
 	protected JLabel delegatedMe;
+	protected JLabel unavailable;
 	Field constraintTypeField = Configuration.getFieldFromId("Field.constraintType"); //$NON-NLS-1$
 	Field constraintDateField = Configuration.getFieldFromId("Field.constraintDate"); //$NON-NLS-1$
 	Field deadlineField = Configuration.getFieldFromId("Field.deadline"); //$NON-NLS-1$
@@ -119,6 +123,8 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 		delegated.setOpaque(false);
 		delegatedMe = new JLabel(" ",IconManager.getIcon("indicator.delegatedMe"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
 		delegatedMe.setOpaque(false);
+		unavailable = new JLabel(" ",IconManager.getIcon("indicator.availability"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
+		unavailable.setOpaque(false);
 	}
 	
 	
@@ -154,6 +160,18 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 			text.append(Messages.getString("TaskIndicatorsComponent.TheTaskWasCompletedOn") + finish.getText(indicators,null)+"<br>"); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		
+		if (indicators instanceof NormalTask) { // resources assigned when their Max Units are 0%, see AvailabilityWarning
+			List<String> periods = AvailabilityWarning.unavailablePeriods((NormalTask)indicators);
+			if (!periods.isEmpty()) {
+				setLook(unavailable,isSelected,hasFocus);
+				label.add(unavailable);
+				text.append(Messages.getString("AvailabilityWarning.Header")); //$NON-NLS-1$
+				for (String period : periods)
+					text.append("<br>- ").append(period); //$NON-NLS-1$
+				text.append("<br>"); //$NON-NLS-1$
+			}
+		}
+
 		if (indicators.isParentWithAssignments()) {
 			setLook(parentAssignment,isSelected,hasFocus);
 			label.add(parentAssignment);

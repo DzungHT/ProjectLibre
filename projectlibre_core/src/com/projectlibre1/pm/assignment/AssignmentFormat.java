@@ -164,7 +164,8 @@ public class AssignmentFormat extends AssociationFormat {
 			// no units entered: keep units of an existing assignment, otherwise use the default units for the resource
 			Object task = parameters.isLeftAssociation() ? parameters.getThisObject() : found;
 			Assignment existing = (task instanceof NormalTask) ? ((NormalTask)task).findAssignment(resource) : null;
-			percent = (existing != null) ? existing.getUnits() : TaskDefaultOption.getInstance().getAssignmentUnits(resource);
+			percent = (existing != null) ? existing.getUnits()
+					: TaskDefaultOption.getInstance().getAssignmentUnits(resource, (task instanceof NormalTask) ? (NormalTask) task : null);
 		}
 		Assignment ass = Assignment.getInstance((Task) (parameters.isLeftAssociation() ? parameters.getThisObject() : found),
 										resource,
