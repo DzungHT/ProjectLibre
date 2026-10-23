@@ -57,6 +57,7 @@ package com.projectlibre1.pm.graphic.spreadsheet.editor;
 
 import java.awt.Component;
 import java.awt.event.ActionEvent;
+import java.awt.event.MouseEvent;
 import java.util.EventObject;
 
 import javax.swing.AbstractAction;
@@ -148,10 +149,9 @@ public class SpreadSheetCellEditorAdapter implements TableCellEditor {
 	 * @see javax.swing.CellEditor#isCellEditable(java.util.EventObject)
 	 */
 	public boolean isCellEditable(EventObject event) {
-		/*if (event instanceof EditCellEvent){
-			return true;
-		}
-		return false;*/
+		// a single click only selects, a double click starts editing. Typing or F2 still start editing
+		if (event instanceof MouseEvent)
+			return ((MouseEvent)event).getClickCount() >= 2;
 		return true;
 	}
 	/**

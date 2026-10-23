@@ -74,6 +74,7 @@ import javax.swing.event.UndoableEditListener;
 import org.apache.commons.collections.Closure;
 
 import com.projectlibre1.dialog.BaselineDialog;
+import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.DelegateTaskDialog;
 import com.projectlibre1.dialog.FindDialog;
 import com.projectlibre1.dialog.UpdateProjectDialogBox;
@@ -122,6 +123,7 @@ import com.projectlibre1.job.JobQueue;
 import com.projectlibre1.pm.calendar.CalendarService;
 import com.projectlibre1.pm.calendar.HasCalendar;
 import com.projectlibre1.pm.calendar.WorkingCalendar;
+import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.dependency.DependencyService;
 import com.projectlibre1.pm.resource.ResourceImpl;
 import com.projectlibre1.pm.task.Portfolio;
@@ -137,6 +139,7 @@ import com.projectlibre1.util.Alert;
 import com.projectlibre1.util.ArrayUtils;
 import com.projectlibre1.util.ClassUtils;
 import com.projectlibre1.util.DataUtils;
+import com.projectlibre1.strings.Messages;
 import com.projectlibre1.util.Environment;
 import com.projectlibre1.workspace.SavableToWorkspace;
 import com.projectlibre1.workspace.WorkspaceSetting;
@@ -437,22 +440,126 @@ public class DocumentFrame extends NamedFrame implements
 	}
 
 
+	// below this many tasks (link) or dependencies (unlink) the work is quick enough to be done without progress dialog
+	private static final int BUSY_DIALOG_THRESHOLD = 30;
+
 	public void doLinkTasks() {
 		finishAnyOperations();
-		try {
-			List list = NodeList.nodeListToImplList(getSelectedNodes(false), NotAssignmentFilter.getInstance());
-			DependencyService.getInstance().connect(list,this,null);
-			//DependencyService.getInstance().connect(list,this);
-		} catch (InvalidAssociationException e) {
-			Alert.error(e.getMessage(),this);
-		}
+		final List list = NodeList.nodeListToImplList(getSelectedNodes(false), NotAssignmentFilter.getInstance());
+		final int rows = list.size() - 1;
+		runDependencyBatch(Messages.getString("Text.linkingTasks"), list.size(), new DependencyBatchStep(Messages.getString("Text.creatingLinks")) {
+			int row = 0;
+			List newDependencies = new ArrayList();
+			boolean prepare(BusyOperationDialog dialog) throws Exception {
+				// circularities are tested between every pair of tasks, one row of pairs per call
+				if (row < rows) {
+					DependencyService.getInstance().prepareLinks(list, null, row, row + 1, newDependencies);
+					row++;
+					progress(dialog, Messages.getString("Text.checkingLinks"), row, rows);
+					return false;
+				}
+				dependencies = newDependencies;
+				return true;
+			}
+			void apply(Dependency dependency) {
+				DependencyService.getInstance().connect(dependency, DocumentFrame.this);
+			}
+		});
 	}
 	public void doUnlinkTasks() {
 		finishAnyOperations();
 		List list = NodeList.nodeListToImplList(getSelectedNodes(false), NotAssignmentFilter.getInstance());
+		final List toRemove = DependencyService.getInstance().findDependenciesBetween(list);
+		runDependencyBatch(Messages.getString("Text.unlinkingTasks"), toRemove.size(), new DependencyBatchStep(Messages.getString("Text.removingLinks")) {
+			boolean prepare(BusyOperationDialog dialog) {
+				dependencies = toRemove;
+				return true;
+			}
+			void apply(Dependency dependency) {
+				DependencyService.getInstance().remove(dependency, DocumentFrame.this, true);
+			}
+		});
+	}
 
+	/**
+	 * Link or unlink of many tasks: dependencies are first prepared (can be canceled), then applied in a single
+	 * transaction, so that the schedule is calculated once at the end instead of for each dependency, and a single
+	 * undo reverts all.
+	 */
+	private abstract class DependencyBatchStep implements BusyOperationDialog.Step {
+		protected List dependencies = null;
+		private final String applyMessage;
+		private int applied = 0;
+		private int transactionId = 0;
+		private boolean recalculating = false;
 
-		DependencyService.getInstance().removeAnyDependencies(list,this);
+		DependencyBatchStep(String applyMessage) {
+			this.applyMessage = applyMessage;
+		}
+		/** Fill dependencies, a bit per call. Returns true when done */
+		abstract boolean prepare(BusyOperationDialog dialog) throws Exception;
+		abstract void apply(Dependency dependency);
+
+		public boolean next(BusyOperationDialog dialog) throws Exception {
+			if (dependencies == null) {
+				prepare(dialog);
+				return false;
+			}
+			if (dependencies.isEmpty())
+				return true;
+			if (applied < dependencies.size()) {
+				if (transactionId == 0) {
+					if (dialog != null)
+						dialog.setCancelable(false);
+					getProject().beginUndoUpdate();
+					transactionId = getProject().fireMultipleTransaction(0, true);
+				}
+				apply((Dependency)dependencies.get(applied++));
+				progress(dialog, applyMessage, applied, dependencies.size());
+				return false;
+			}
+			if (!recalculating) {
+				recalculating = true;
+				progress(dialog, Messages.getString("Text.recalculatingSchedule"), 0, 0);
+				if (dialog != null)
+					dialog.endSlice(); // show the message before the calculation
+				return false;
+			}
+			close();
+			return true;
+		}
+		/** End the transaction, which calculates the schedule */
+		void close() {
+			if (transactionId == 0)
+				return;
+			try {
+				getProject().fireMultipleTransaction(transactionId, false);
+			} finally {
+				transactionId = 0;
+				getProject().endUndoUpdate();
+			}
+		}
+		void progress(BusyOperationDialog dialog, String message, int done, int total) {
+			if (dialog != null)
+				dialog.setProgress(message, done, total);
+		}
+	}
+
+	private void runDependencyBatch(String title, int size, DependencyBatchStep step) {
+		try {
+			if (size < BUSY_DIALOG_THRESHOLD) {
+				while (!step.next(null));
+			} else {
+				BusyOperationDialog.run(this, title, step);
+			}
+		} catch (InvalidAssociationException e) {
+			Alert.error(e.getMessage(),this);
+		} catch (Exception e) {
+			e.printStackTrace();
+			Alert.error(e.getMessage(),this);
+		} finally {
+			step.close();
+		}
 	}
 	public void doUndoRedo(boolean isUndo) {
 		if (!isActive())
@@ -507,6 +614,22 @@ public class DocumentFrame extends NamedFrame implements
 		SpreadSheet ss = getActiveSpreadSheet();
 		if (ss !=null)
 			ss.executeAction(MenuActionConstants.ACTION_COLLAPSE);
+	}
+	public void doExpandLevel(boolean expand) {
+		SpreadSheet ss = getActiveSpreadSheet();
+		if (ss == null || ss.getCache() == null)
+			return;
+		ss.finishCurrentOperations();
+		ss.getCache().expandOneLevel(expand);
+	}
+
+	/** Shows the tasks down to an outline level, Integer.MAX_VALUE for all */
+	public void doExpandToLevel(int level) {
+		SpreadSheet ss = getActiveSpreadSheet();
+		if (ss == null || ss.getCache() == null)
+			return;
+		ss.finishCurrentOperations();
+		ss.getCache().expandToLevel(level);
 	}
 
 	public void doIndent() {

@@ -85,6 +85,7 @@ import com.projectlibre1.grouping.core.transform.ViewConfiguration;
 import com.projectlibre1.grouping.core.transform.ViewTransformer;
 import com.projectlibre1.grouping.core.transform.filtering.BaseFilter;
 import com.projectlibre1.grouping.core.transform.filtering.NodeFilter;
+import com.projectlibre1.grouping.core.transform.filtering.TaskNameFilter;
 import com.projectlibre1.grouping.core.transform.grouping.NodeGroup;
 import com.projectlibre1.grouping.core.transform.grouping.NodeGrouper;
 import com.projectlibre1.grouping.core.transform.sorting.NodeSorter;
@@ -139,6 +140,10 @@ public class NodeCacheTransformer implements CacheTransformer {
         if (hiddenFilter instanceof BaseFilter && !((BaseFilter)hiddenFilter).isActive()) hiddenFilter=null; //to avoid useless filtering in case of BaseFilter
         NodeFilter userFilter=(transformer.isNoneFilter())?null:transformer.getUserFilter();
         boolean filtering=hiddenFilter!=null||userFilter!=null;
+        if (userFilter instanceof TaskNameFilter&&((TaskNameFilter)userFilter).isLeavesOnly()){
+        	preserveHierarchy=false;
+        	removeSummaries(list);
+        }
 
         NodeSorter sorter1=transformer.getHiddenSorter();
         NodeSorter sorter2=transformer.getUserSorter();
@@ -212,7 +217,7 @@ public class NodeCacheTransformer implements CacheTransformer {
         if (preserveHierarchy){
         	list.clear();
         	if (transformer.isShowEmptySummaries()){
-        		if ("TaskUsage".equals(viewName)) filterBadBranches(localList);
+        		if ("TaskUsage".equals(viewName) || userFilter instanceof TaskNameFilter) filterBadBranches(localList);
         	}else filterEmptySummaries(localList,false);
         }
 

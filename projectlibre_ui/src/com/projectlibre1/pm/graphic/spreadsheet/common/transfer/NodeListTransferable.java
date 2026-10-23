@@ -83,6 +83,7 @@ import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.resource.ResourcePool;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.Task;
+import com.projectlibre1.undo.UndoController;
 
 
 
@@ -260,11 +261,72 @@ public class NodeListTransferable implements Transferable {
 		return node;
 	}
 
+	/**
+	 * Paste like a spreadsheet application: if the selection is a multiple of the copied block
+	 * (e.g. one copied cell and several selected cells), the block is repeated over the whole selection.
+	 * Otherwise the block is pasted from the first selected cell.
+	 */
 	public static void pasteString(String s,SpreadSheet spreadsheet){
 		int[] rows=spreadsheet.getSelectedRows();
 		int[] cols=spreadsheet.getSelectedColumns();
-		if (rows.length>0&&cols.length>0)
-			pasteString(s,spreadsheet,rows[0],cols[0]);
+		if (rows.length==0||cols.length==0)
+			return;
+		String[][] block=toBlock(s);
+		int blockRows=block.length;
+		int blockCols=0;
+		for (int r=0;r<blockRows;r++)
+			blockCols=Math.max(blockCols,block[r].length);
+		if (blockRows==0||blockCols==0)
+			return;
+
+		boolean fill=rows.length*cols.length>1&&rows.length%blockRows==0&&cols.length%blockCols==0;
+		UndoController undoController=getUndoController(spreadsheet);
+		if (undoController!=null) undoController.beginUpdate(); // a single undo for the whole paste
+		try{
+			if (fill)
+				fillSelection(block,blockCols,spreadsheet,rows,cols);
+			else
+				pasteString(s,spreadsheet,rows[0],cols[0]);
+		}finally{
+			if (undoController!=null) undoController.endUpdate();
+		}
+	}
+
+	private static String[][] toBlock(String s){
+		String[] lines=s.replace("\r","").split("\n"); // trailing empty lines are dropped
+		String[][] block=new String[lines.length][];
+		for (int r=0;r<lines.length;r++)
+			block[r]=lines[r].split("\t",-1);
+		return block;
+	}
+
+	private static void fillSelection(String[][] block,int blockCols,SpreadSheet spreadsheet,int[] rows,int[] cols){
+		CommonSpreadSheetModel model=(CommonSpreadSheetModel)spreadsheet.getModel();
+		FieldContext fieldContext=model.getFieldContext();
+		boolean round=fieldContext.isRound();
+		fieldContext.setRound(true);
+		try{
+			for (int r=0;r<rows.length;r++){
+				String[] line=block[r%block.length];
+				for (int c=0;c<cols.length;c++){
+					int blockCol=c%blockCols;
+					String valueS=(blockCol<line.length)?line[blockCol]:"";
+					try{
+						model.setValueAt(valueS,rows[r],cols[c]+1); // model columns are shifted by one, see pasteStringLine
+					}catch(Exception e){}
+				}
+			}
+		}finally{
+			fieldContext.setRound(round);
+		}
+	}
+
+	private static UndoController getUndoController(SpreadSheet spreadsheet){
+		try{
+			return ((CommonSpreadSheetModel)spreadsheet.getModel()).getCache().getModel().getUndoController();
+		}catch(Exception e){
+			return null;
+		}
 	}
 	public static void pasteString(String s,SpreadSheet spreadsheet,int row0, int col0){
 		StringTokenizer st=new StringTokenizer(s,"\n");

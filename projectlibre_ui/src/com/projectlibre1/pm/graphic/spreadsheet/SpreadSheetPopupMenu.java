@@ -55,6 +55,7 @@
  *******************************************************************************/
 package com.projectlibre1.pm.graphic.spreadsheet;
 
+import java.awt.event.ActionEvent;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -66,6 +67,9 @@ import javax.swing.border.BevelBorder;
 
 import com.projectlibre1.menu.MenuActionConstants;
 import com.projectlibre1.pm.graphic.IconManager;
+import com.projectlibre1.pm.graphic.frames.GraphicManager;
+import com.projectlibre1.pm.graphic.spreadsheet.common.CommonSpreadSheet;
+import com.projectlibre1.strings.Messages;
 import com.projectlibre1.util.Environment;
 
 /**
@@ -95,7 +99,31 @@ public class SpreadSheetPopupMenu extends JPopupMenu {
 			for (int i=0;i<actions.length;i++){
 				add(spreadSheet.prepareAction(actions[i]),getMenuAction(actions[i]));
 			}
+			if (CommonSpreadSheet.TASK_CATEGORY.equals(spreadSheet.getSpreadSheetCategory())){
+				addSeparator();
+				add(new MainMenuAction(Messages.getString("Text.linkingTasks"),MenuActionConstants.ACTION_LINK),
+						Environment.isNewLook()?"menu24.link":"menu.link");
+				add(new MainMenuAction(Messages.getString("Text.unlinkingTasks"),MenuActionConstants.ACTION_UNLINK),
+						Environment.isNewLook()?"menu24.unlink":"menu.unlink");
+			}
 		}
+
+	    /**
+	     * Runs an action of the main menu (link, unlink...) on the current selection
+	     */
+	    private class MainMenuAction extends AbstractAction {
+	    	private final String actionId;
+	    	MainMenuAction(String name,String actionId){
+	    		super(name);
+	    		this.actionId=actionId;
+	    	}
+			public void actionPerformed(ActionEvent e) {
+				GraphicManager graphicManager=GraphicManager.getInstance(spreadSheet);
+				if (graphicManager==null) return;
+				Action action=graphicManager.getMenuManager().getActionFromId(actionId);
+				if (action!=null) action.actionPerformed(e);
+			}
+	    }
 	    
 	    private Map menuActionMap=null;
 	    protected String getMenuAction(String action){

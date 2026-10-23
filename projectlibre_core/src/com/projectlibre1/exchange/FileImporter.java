@@ -60,6 +60,7 @@ import java.io.OutputStream;
 
 import com.projectlibre1.job.Job;
 import com.projectlibre1.job.JobQueue;
+import com.projectlibre1.job.JobRunnable;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.ProjectFactory;
 
@@ -73,6 +74,7 @@ public abstract class FileImporter /*implements Runnable*/ {
 	protected Project project;
 	protected ResourceMappingForm resourceMapping;
 	protected ProjectFactory projectFactory=null;
+	protected JobRunnable exportRunnable=null;
 
 /**
  * Constructor
@@ -128,6 +130,16 @@ public abstract class FileImporter /*implements Runnable*/ {
 	}
 	public void setJobQueue(JobQueue jobQueue) {
 		this.jobQueue = jobQueue;
+	}
+
+	/** The job runnable doing the export, to which exportFile() reports its progress */
+	public void setExportRunnable(JobRunnable exportRunnable) {
+		this.exportRunnable = exportRunnable;
+	}
+
+	protected void exportProgress(float progress, String note) {
+		if (exportRunnable != null)
+			exportRunnable.setProgress(progress, note);
 	}
 
 	public ResourceMappingForm getResourceMapping() {

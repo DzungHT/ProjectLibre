@@ -191,7 +191,7 @@ public final class AssignmentDialog extends AbstractDialog implements DocumentSe
 	void assign() {
 	    SpreadSheet sp=spreadSheetPane.getSpreadSheet();
 		if (sp.isEditing()) sp.getCellEditor().stopCellEditing();
-		assign(getSelectedResources(),1.0D);
+		assign(getSelectedResources(),Double.NaN); // NaN: default units of each resource
 		spreadSheetPane.updateTable();
 	}
 	
@@ -272,7 +272,7 @@ public final class AssignmentDialog extends AbstractDialog implements DocumentSe
 			remove(resource);
 		else // resource is in new list too, so don't touch it
 			replacementList.remove(resource);
-		assign(replacementList,1.0); //TODO assign what the old one was assigned
+		assign(replacementList,Double.NaN); //TODO assign what the old one was assigned
 	}
 
 	

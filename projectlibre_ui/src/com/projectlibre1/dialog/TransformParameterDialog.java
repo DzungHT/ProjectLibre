@@ -60,8 +60,10 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
+import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JOptionPane;
+import javax.swing.JTextField;
 
 import org.apache.commons.collections.Closure;
 
@@ -95,6 +97,18 @@ public final class TransformParameterDialog extends AbstractDialog implements Cl
 	    for (Iterator i=transform.getParameters().iterator();i.hasNext();){
 	        param=(TransformParameter)i.next();
 	        labels.add(/*new JLabel(*/Messages.getString(param.getId())/*)*/);
+	        if (param.isString()){
+	        	JTextField textField=new JTextField(param.getValue()==null?"":(String)param.getValue(),25);
+	        	textField.selectAll();
+	        	valueComponents.add(textField);
+	        	continue;
+	        }
+	        if (param.isBoolean()){
+	        	JCheckBox checkBox=new JCheckBox();
+	        	checkBox.setSelected(param.getBooleanValue());
+	        	valueComponents.add(checkBox);
+	        	continue;
+	        }
 	        ExtDateField dateChooser= new ExtDateField(); //ComponentFactory.createDateField(); 
 	        
 	        Date date = param.getValue() == null ? new Date(DateTime.midnightToday()) : new Date((Long)param.getValue());
@@ -124,9 +138,15 @@ public final class TransformParameterDialog extends AbstractDialog implements Cl
 			Iterator c=valueComponents.iterator();
 			while (p.hasNext()){
 			    TransformParameter param=(TransformParameter)p.next();
-			    ExtDateField comp=(ExtDateField)c.next();
-			    long d = DateTime.gmt(comp.getDateValue());
-			    param.setValue(d);
+			    Object comp=c.next();
+			    if (param.isString()){
+			    	param.setValue(((JTextField)comp).getText().trim());
+			    }else if (param.isBoolean()){
+			    	param.setValue(Boolean.valueOf(((JCheckBox)comp).isSelected()));
+			    }else{
+			    	long d = DateTime.gmt(((ExtDateField)comp).getDateValue());
+			    	param.setValue(d);
+			    }
 			    
 			    transform.setParameter(param);
 			}

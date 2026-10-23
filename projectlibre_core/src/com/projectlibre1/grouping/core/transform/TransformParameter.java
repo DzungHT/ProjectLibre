@@ -74,4 +74,25 @@ public class TransformParameter {
     public void setValue(Object value) {
         this.value = value;
     }
+    protected String type; //null means date
+    public String getType() {
+        return type;
+    }
+    public void setType(String type) {
+        this.type = type;
+    }
+    public boolean isString() {
+        return "string".equals(type);
+    }
+    public boolean isBoolean() {
+        return "boolean".equals(type);
+    }
+    public boolean getBooleanValue() {
+        return toBoolean(value,false);
+    }
+    //value may be a Boolean or the String read from view.xml
+    public static boolean toBoolean(Object value,boolean defaultValue) {
+        if (value==null) return defaultValue;
+        return Boolean.valueOf(value.toString()).booleanValue();
+    }
 }

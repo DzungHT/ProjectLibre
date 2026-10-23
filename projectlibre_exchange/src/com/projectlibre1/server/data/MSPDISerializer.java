@@ -345,8 +345,9 @@ public class MSPDISerializer implements ProjectSerializer {
 	public boolean saveProject(Project project,OutputStream out) {
 		try {
 			//MSPDISerializer serializer=new MSPDISerializer();
+			if (job!=null) job.setProgress(0.05f,Messages.getString("SaveProgress.Preparing")); //$NON-NLS-1$
 			ModifiedMSPDIWriter data=/*serializer.*/serializeProject(project);
-			if (job!=null) job.setProgress(0.9f);
+			if (job!=null) job.setProgress(0.9f,Messages.getString("SaveProgress.Writing")); //$NON-NLS-1$
 			data.write(data.getProjectFile(),out);
 			if (job!=null) job.setProgress(1.0f);
 		} catch (Exception e) {

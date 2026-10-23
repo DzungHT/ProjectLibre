@@ -145,7 +145,7 @@ public class AssignmentEntryPane extends JScrollPane implements HierarchyListene
 			if (!entry.isAssigned()) { // assign it first, then set value
 				if (resourceAssigner != null) {
 					Field field = ((SpreadSheetModel)getModel()).getFieldInColumn(column+1);
-					double units = 1.0;
+					double units = Double.NaN; // NaN: default units of the resource
 					if (field == AssignmentEntry.getRateField()) {
 						units = ((Rate)aValue).getValue();
 					}

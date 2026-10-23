@@ -359,6 +359,46 @@ public class ReferenceNodeModelCache implements ObjectEvent.Listener, HierarchyL
 		if (gnode.isComposite()) gnode.setCollapsed(!gnode.isCollapsed());
 		update();
 	}
+
+	/**
+	 * Outline expand/collapse of one level over the whole tree:
+	 * expand opens the shallowest collapsed level, collapse closes the deepest visible open level.
+	 */
+	public void expandOneLevel(boolean expand){
+		List candidates=new ArrayList();
+		int hiddenBelow=-1;
+		for (Iterator i=nodeCache.getCacheIterator();i.hasNext();){
+			GraphicNode node=(GraphicNode)i.next();
+			if (hiddenBelow!=-1&&node.getLevel()>hiddenBelow) continue;
+			hiddenBelow=-1;
+			if (!node.isComposite()) continue;
+			if (node.isCollapsed()) hiddenBelow=node.getLevel();
+			if (node.isCollapsed()==expand) candidates.add(node);
+		}
+		if (candidates.isEmpty()) return;
+		int target=-1;
+		for (Iterator i=candidates.iterator();i.hasNext();){
+			int level=((GraphicNode)i.next()).getLevel();
+			if (target==-1||(expand?level<target:level>target)) target=level;
+		}
+		for (Iterator i=candidates.iterator();i.hasNext();){
+			GraphicNode node=(GraphicNode)i.next();
+			if (node.getLevel()!=target) continue;
+			if (expand&&!node.isFetched()) node.fetch(); // for subprojects
+			node.setCollapsed(!expand);
+		}
+		update();
+	}
+	public void expandToLevel(int level){
+		for (Iterator i=nodeCache.getCacheIterator();i.hasNext();){
+			GraphicNode node=(GraphicNode)i.next();
+			if (!node.isComposite()) continue;
+			boolean expand=node.getLevel()<level;
+			if (expand&&!node.isFetched()) node.fetch(); // for subprojects
+			node.setCollapsed(!expand);
+		}
+		update();
+	}
 	
 //edges
 	public void buildEdges(){

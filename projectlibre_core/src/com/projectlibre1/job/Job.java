@@ -79,6 +79,7 @@ public class Job extends Thread {
 //	static Log log = LogFactory.getLog(Job.class);
 
 	protected float progress,progressStart;
+	protected String note=null;
 	protected float weight=0.0f;
 	protected boolean canceled=false;
 	protected long jobId;
@@ -167,6 +168,17 @@ public class Job extends Thread {
 	public synchronized float getProgress() {
 		return progress;
 	}
+	/** The last note given with a progress, or null */
+	public synchronized String getNote() {
+		return note;
+	}
+	/** false to not open the job's own progress monitor, when the caller shows the progress */
+	public void setShowProgress(boolean showProgress) {
+		this.showProgess = showProgress;
+	}
+	public String getTitle() {
+		return title;
+	}
 	public synchronized void setProgress(float runnableProgress,JobRunnable runnable) {
 		setProgress(runnableProgress,null,runnable);
 	}
@@ -175,6 +187,7 @@ public class Job extends Thread {
 	public synchronized void setProgress(float runnableProgress, final String note,JobRunnable runnable) {
 		log("setProgress("+runnableProgress+","+note+","+runnable.getName()+"): progress="+progress+", weight="+runnable.getWeight()+"/"+weight+", lastFinishedRunnable="+((lastFinishedRunnable==null)?null:lastFinishedRunnable.getName())+", progressStart="+progressStart);
 		if (canceled||runnable==lastFinishedRunnable) return;
+		if (note!=null) this.note=note;
 		float relativeProgress=runnableProgress*runnable.getWeight()/getWeight();
 		if (progressStart+relativeProgress>progress){
 			progress = progressStart+relativeProgress;

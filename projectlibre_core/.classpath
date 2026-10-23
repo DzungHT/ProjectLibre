@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
 	<classpathentry kind="src" path="src"/>
-	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
 	<classpathentry combineaccessrules="false" kind="src" path="/projectlibre_contrib"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/ant-1.6.5.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/antlr.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/asm-analysis.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/asm-attrs.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/asm-tree.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/asm-util.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/asm.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/bsf-2.3.0-rc1.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/commons-cli-1.0.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/groovy.jar"/>
-	<classpathentry kind="lib" path="/projectlibre_contrib/lib/groovy/xstream-1.1.1.jar"/>
+	<classpathentry kind="lib" path="C:/Users/dunght46/Documents/Projects/projectlibre-code-0530be227f4a10c5545cce8d3db20ac5a4d76a66/projectlibre_contrib/lib/groovy/ant-1.9.15.jar"/>
+	<classpathentry kind="lib" path="C:/Users/dunght46/Documents/Projects/projectlibre-code-0530be227f4a10c5545cce8d3db20ac5a4d76a66/projectlibre_contrib/lib/groovy/ant-antlr-1.9.15.jar"/>
+	<classpathentry kind="lib" path="C:/Users/dunght46/Documents/Projects/projectlibre-code-0530be227f4a10c5545cce8d3db20ac5a4d76a66/projectlibre_contrib/lib/groovy/commons-cli-1.2.jar"/>
+	<classpathentry kind="lib" path="C:/Users/dunght46/Documents/Projects/projectlibre-code-0530be227f4a10c5545cce8d3db20ac5a4d76a66/projectlibre_contrib/lib/groovy/groovy-2.4.21.jar"/>
+	<classpathentry kind="lib" path="C:/Users/dunght46/Documents/Projects/projectlibre-code-0530be227f4a10c5545cce8d3db20ac5a4d76a66/projectlibre_contrib/lib/groovy/xstream-1.4.10.jar"/>
 	<classpathentry kind="lib" path="/projectlibre_contrib/lib/commons-beanutils.jar"/>
 	<classpathentry kind="lib" path="/projectlibre_contrib/lib/commons-collections.jar"/>
 	<classpathentry kind="lib" path="/projectlibre_contrib/lib/commons-digester.jar"/>

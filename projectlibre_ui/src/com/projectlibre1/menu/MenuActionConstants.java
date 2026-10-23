@@ -142,6 +142,12 @@ public interface MenuActionConstants {
 	public static final String ACTION_DELEGATE_TASKS          = "DelegateTasks";
 	public static final String ACTION_UPDATE_TASKS            = "UpdateTasks";
 	public static final String ACTION_UPDATE_PROJECT          = "UpdateProject";
+	public static final String ACTION_TASK_DEFAULT_SETTINGS   = "TaskDefaultSettings";
+	public static final String ACTION_IMPORT_ULNL             = "ImportUlnl";
+	public static final String ACTION_EXPORT_WBS_EXCEL        = "ExportWbsExcel";
+	public static final String ACTION_IMPORT_WBS_EXCEL        = "ImportWbsExcel";
+	public static final String ACTION_EFFORT_REPORT          = "EffortReport";
+	public static final String ACTION_EFFORT_COLUMNS         = "EffortColumns";
 	public static final String ACTION_SAVE_BASELINE           = "SaveBaseline";
 	public static final String ACTION_CLEAR_BASELINE          = "ClearBaseline";
 	public static final String ACTION_LOCALE		          = "LocaleAction";
@@ -163,6 +169,8 @@ public interface MenuActionConstants {
 	public static final String ACTION_EXPAND                = "Expand";
 	public static final String ACTION_COLLAPSE                = "Collapse";
 	public static final String ACTION_HIDE_ASSIGNMENTS        = "HideAssignments";
+	public static final String ACTION_EXPAND_LEVEL            = "ExpandLevel";
+	public static final String ACTION_COLLAPSE_LEVEL          = "CollapseLevel";
 	public static final String ACTION_HIDE_OUTLINE_SYMBOLS    = "HideOutlineSymbols";
 
 	public static final String ACTION_ALL_CHILDREN            = "AllChildren";

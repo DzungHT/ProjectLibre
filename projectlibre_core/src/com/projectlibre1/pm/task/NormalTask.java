@@ -58,6 +58,8 @@ package com.projectlibre1.pm.task;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -447,6 +449,10 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 				&& assignment.isInitialized() && assignment.isLabor();
 		Assignment defaultAssignment = findAssignment(ResourceImpl
 				.getUnassignedInstance());
+		// fixed work: the first real assignment keeps the task's work, so the duration follows the units
+		boolean keepWork = recalculateDuration && defaultAssignment != null
+				&& getSchedulingType() == SchedulingType.FIXED_WORK;
+		long workBefore = keepWork ? getWork(null) : 0;
 
 		if (!assignment.isDefault()) {
 			// get rid of any default
@@ -477,6 +483,9 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 
 		if (!assignment.isInitialized()) // if reading in, then don't recalc duration
 			return;
+
+		if (keepWork && workBefore > 0)
+			setWork(workBefore);
 
 		// if effort driven then set duration
 		if (recalculateDuration && isEffortDriven()) {
@@ -1754,6 +1763,49 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 
 	public double getWork() {
 		return getWork(null);
+	}
+
+	/**
+	 * Effort fields: the work in man-hours, man-days (8 hours) and man-months (22 man-days),
+	 * rounded down to 3 decimals. A summary has the effort of the leaf tasks below it, each unit
+	 * computed from the total hours, so its MD and MM are not sums of rounded values.
+	 */
+	public static final double HOURS_PER_MAN_DAY = 8;
+	public static final double MAN_DAYS_PER_MAN_MONTH = 22;
+	public static final int EFFORT_DECIMALS = 3;
+	private static final double MILLIS_PER_HOUR = 60 * 60 * 1000;
+
+	public static double roundEffort(double value) {
+		return BigDecimal.valueOf(value).setScale(EFFORT_DECIMALS, RoundingMode.FLOOR).doubleValue();
+	}
+	/** Work in hours, not rounded, of the task or of the leaf tasks below a summary */
+	public double getWorkHours() {
+		if (!isWbsParent())
+			return Duration.millis(getWork(null)) / MILLIS_PER_HOUR;
+		double hours = 0;
+		Collection children = getWbsChildrenNodes();
+		if (children != null)
+			for (Iterator i = children.iterator(); i.hasNext();) {
+				Object impl = ((Node) i.next()).getImpl();
+				if (impl instanceof NormalTask)
+					hours += ((NormalTask) impl).getWorkHours();
+			}
+		return hours;
+	}
+	public double getManHours() {
+		return roundEffort(getWorkHours());
+	}
+	public void setManHours(double manHours) {
+		setWork(Duration.getInstance(manHours, TimeUnit.HOURS));
+	}
+	public boolean isReadOnlyManHours(FieldContext fieldContext) {
+		return isWbsParent() || isReadOnlyWork(fieldContext);
+	}
+	public double getManDays() {
+		return roundEffort(getWorkHours() / HOURS_PER_MAN_DAY);
+	}
+	public double getManMonths() {
+		return roundEffort(getWorkHours() / HOURS_PER_MAN_DAY / MAN_DAYS_PER_MAN_MONTH);
 	}
 
 	public double getBaselineWork() {

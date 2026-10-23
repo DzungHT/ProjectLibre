@@ -345,8 +345,10 @@ public class SpreadSheet extends CommonSpreadSheet implements Cloneable {
 						
 					}
 					if (!e.isConsumed()) {
-						if (e.getClickCount() == 2)  // if above code didn't treat and is dbl click
-							doDoubleClick(row,col);
+						if (e.getClickCount() == 2) { // if above code didn't treat and is dbl click
+							if (!isCellEditable(row,col)) // editable cells: the double click starts editing
+								doDoubleClick(row,col);
+						}
 						else
 							doClick(row,col);
 					}

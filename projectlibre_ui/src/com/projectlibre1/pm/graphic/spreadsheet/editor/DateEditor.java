@@ -58,8 +58,6 @@ package com.projectlibre1.pm.graphic.spreadsheet.editor;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.text.DateFormat;
 import java.util.Date;
 
@@ -72,7 +70,6 @@ import javax.swing.SwingUtilities;
 import net.sf.nachocalendar.components.DateField;
 import net.sf.nachocalendar.table.DateFieldTableEditor;
 
-import com.projectlibre1.pm.graphic.frames.GraphicManager;
 import com.projectlibre1.pm.graphic.spreadsheet.SpreadSheetModel;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.field.FieldConverter;
@@ -89,21 +86,11 @@ public class DateEditor extends DateFieldTableEditor {
 	public DateEditor() {
 	}
 	public static class ExtDateField extends DateField implements KeyboardFocusable {
+		// no double click handling here: in the spreadsheet a double click starts editing
 		public ExtDateField(DateFormat df) {
 			super(df);
-			addMouseListener();
 		}
 		public ExtDateField() {
-			addMouseListener();
-		}
-		private void addMouseListener() {
-			getTextField().addMouseListener(new MouseAdapter() {
-				public void mousePressed(MouseEvent e) {
-					if (e.getClickCount() == 2)
-						GraphicManager.getInstance(ExtDateField.this).doInformationDialog(false);
-				}
-			});
-			
 		}
 		protected boolean processKeyBinding(KeyStroke arg0, KeyEvent arg1, int arg2, boolean arg3) {
 			if (Character.isDefined(arg0.getKeyChar())) {

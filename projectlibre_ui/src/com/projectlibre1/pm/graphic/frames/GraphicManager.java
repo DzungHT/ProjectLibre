@@ -60,6 +60,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
+import java.awt.event.InputEvent;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
 import java.awt.event.KeyEvent;
@@ -75,7 +76,9 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.InvocationTargetException;
+import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -103,6 +106,8 @@ import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.JPanel;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.JTabbedPane;
@@ -136,6 +141,12 @@ import com.projectlibre1.contrib.ClassLoaderUtils;
 import com.projectlibre1.dialog.AboutDialog;
 import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
+import com.projectlibre1.dialog.BusyOperationDialog;
+import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
+import com.projectlibre1.dialog.ImportUlnlDialog;
+import com.projectlibre1.dialog.EffortReportDialog;
+import com.projectlibre1.dialog.ExportWbsExcelDialog;
+import com.projectlibre1.dialog.ImportWbsExcelDialog;
 import com.projectlibre1.dialog.FindDialog;
 import com.projectlibre1.dialog.HelpDialog;
 import com.projectlibre1.dialog.LocaleDialog;
@@ -153,6 +164,9 @@ import com.projectlibre1.dialog.options.CalendarDialogBox;
 import com.projectlibre1.document.Document;
 import com.projectlibre1.document.ObjectEvent;
 import com.projectlibre1.exchange.ResourceMappingForm;
+import com.projectlibre1.exchange.ulnl.UlnlWbsImporter;
+import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
+import com.projectlibre1.exchange.wbsexcel.WbsExcelExporter;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.SpreadSheetFieldArray;
 import com.projectlibre1.grouping.core.Node;
@@ -1020,6 +1034,12 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_DELEGATE_TASKS, new DelegateTasksAction());
 		actionsMap.addHandler(ACTION_UPDATE_TASKS, new UpdateTasksAction());
 		actionsMap.addHandler(ACTION_UPDATE_PROJECT, new UpdateProjectAction());
+		actionsMap.addHandler(ACTION_TASK_DEFAULT_SETTINGS, new TaskDefaultSettingsAction());
+		actionsMap.addHandler(ACTION_IMPORT_ULNL, new ImportUlnlAction());
+		actionsMap.addHandler(ACTION_EXPORT_WBS_EXCEL, new ExportWbsExcelAction());
+		actionsMap.addHandler(ACTION_IMPORT_WBS_EXCEL, new ImportWbsExcelAction());
+		actionsMap.addHandler(ACTION_EFFORT_REPORT, new EffortReportAction());
+		actionsMap.addHandler(ACTION_EFFORT_COLUMNS, new EffortColumnsAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1041,6 +1061,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 
 		actionsMap.addHandler(ACTION_CUT, new CutAction());
 		actionsMap.addHandler(ACTION_COPY, new CopyAction());
+		actionsMap.addHandler(ACTION_EXPAND_LEVEL, new ExpandLevelAction(true));
+		actionsMap.addHandler(ACTION_COLLAPSE_LEVEL, new ExpandLevelAction(false));
 		actionsMap.addHandler(ACTION_PASTE, new PasteAction());
 		actionsMap.addHandler(ACTION_DELETE, new DeleteAction());
 
@@ -1539,6 +1561,160 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			return isDocumentWritable();
 		}
 	}
+	public class TaskDefaultSettingsAction extends MenuActionsMap.GlobalMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			TaskDefaultSettingsDialog.doDialog();
+		}
+	}
+	public class ExportWbsExcelAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			Project project = getCurrentFrame().getProject();
+			List<Field> displayed = WbsExcelExporter.exportableFields(getCurrentFrame().getGanttView().getSpreadSheet().getFieldArray());
+			ExportWbsExcelDialog.Result result = ExportWbsExcelDialog.doDialog(displayed, WbsExcelExporter.getAllTaskFields(), project.getName());
+			if (result == null)
+				return;
+			Frame f = getFrameInstance();
+			Cursor cur = f.getCursor();
+			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+			try {
+				WbsExcelExporter.export(project, result.fields, result.file);
+			} catch (IOException e) {
+				f.setCursor(cur);
+				Alert.error(MessageFormat.format(Messages.getString("ExportWbsExcelDialog.WriteError"), result.file.getName(), e.getMessage())); //$NON-NLS-1$
+				return;
+			} finally {
+				f.setCursor(cur);
+			}
+			JOptionPane.showMessageDialog(f, MessageFormat.format(Messages.getString("ExportWbsExcelDialog.Done"), result.file.getAbsolutePath()), //$NON-NLS-1$
+					Messages.getString("ExportWbsExcelDialog.Title"), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
+		}
+	}
+	public class ImportWbsExcelAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			ImportWbsExcelDialog.Result result = ImportWbsExcelDialog.doDialog(getCurrentFrame().getProject());
+			if (result == null)
+				return;
+			Frame f = getFrameInstance();
+			Cursor cur = f.getCursor();
+			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+			List<String> errors;
+			try {
+				errors = result.importer.apply(result.deleteMissing);
+			} finally {
+				f.setCursor(cur);
+			}
+			if (errors.isEmpty())
+				return;
+			StringBuilder b = new StringBuilder();
+			for (String error : errors)
+				b.append(error).append('\n');
+			JTextArea text = new JTextArea(b.toString(), 12, 60);
+			text.setEditable(false);
+			text.setCaretPosition(0);
+			JOptionPane.showMessageDialog(f, new Object[] {MessageFormat.format(Messages.getString("ImportWbsExcelDialog.Errors"), String.valueOf(errors.size())), new JScrollPane(text)}, //$NON-NLS-1$
+					Messages.getString("ImportWbsExcelDialog.Title"), JOptionPane.WARNING_MESSAGE); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	public class EffortReportAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive())
+				EffortReportDialog.doDialog(getCurrentFrame().getProject());
+		}
+	}
+	/** Shows the MH, MD and MM columns after the Work column of the task sheet, or hides them */
+	public class EffortColumnsAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final String[] ids = {"Field.manHours", "Field.manDays", "Field.manMonths"}; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			SpreadSheet sp = getCurrentFrame().getGanttView().getSpreadSheet();
+			SpreadSheetFieldArray fields = (SpreadSheetFieldArray) sp.getFieldArray();
+			boolean shown = false;
+			for (int c = fields.size() - 1; c >= 0; c--) {
+				if (Arrays.asList(ids).contains(((Field) fields.get(c)).getId())) {
+					fields = fields.removeField(c);
+					shown = true;
+				}
+			}
+			if (!shown) {
+				int position = fields.size();
+				for (int c = 0; c < fields.size(); c++) {
+					String id = ((Field) fields.get(c)).getId();
+					if ("Field.work".equals(id) || ("Field.name".equals(id) && position == fields.size())) //$NON-NLS-1$ //$NON-NLS-2$
+						position = c + 1;
+				}
+				for (int i = 0; i < ids.length; i++)
+					fields = fields.insertField(position + i, FieldDictionary.getInstance().getFieldFromId(ids[i]));
+			}
+			sp.setFieldArray(fields);
+		}
+	}
+	public class ImportUlnlAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			List<UlnlWbsParser.WbsItem> wbs = ImportUlnlDialog.doDialog();
+			if (wbs == null)
+				return;
+			final UlnlWbsImporter importer = new UlnlWbsImporter(getCurrentFrame().getProject(), wbs);
+			final String[] messages = {
+					Messages.getString("ImportUlnlDialog.Removing"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.Creating"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.Inserting"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.SettingWork"), //$NON-NLS-1$
+					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
+			Frame f = getFrameInstance();
+			try {
+				BusyOperationDialog.run(f, Messages.getString("ImportUlnlDialog.Progress"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) { // show the first message before the removal of the old tasks
+							started = true;
+							dialog.setCancelable(false); // the confirmation was already given, the project changes from the first step
+							dialog.setProgress(messages[importer.getPhase()], 0, 0);
+							dialog.endSlice();
+							return false;
+						}
+						if (importer.next())
+							return true;
+						dialog.setProgress(messages[importer.getPhase()], importer.getDone(), importer.getTotal());
+						if (importer.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+			} finally {
+				importer.close();
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
 
 	public class DefineCodeAction extends MenuActionsMap.DocumentMenuAction {
 		private static final long serialVersionUID = 1L;
@@ -1707,6 +1883,19 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	// whole outline, one level per click
+	public class ExpandLevelAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final boolean expand;
+		public ExpandLevelAction(boolean expand) {
+			this.expand = expand;
+		}
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive())
+				getCurrentFrame().doExpandLevel(expand);
 		}
 	}
 	public class CutAction extends MenuActionsMap.DocumentMenuAction {
@@ -2369,13 +2558,38 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 		//return container instanceof Applet;
     }
     
+    private static final int MAX_OUTLINE_LEVEL = 10;
+    /** Ribbon combo box that shows the task sheet down to the chosen outline level */
+    private JComponent createOutlineLevelPanel() {
+    	String[] levels = new String[MAX_OUTLINE_LEVEL + 1];
+    	levels[0] = Messages.getString("OutlineLevel.All"); //$NON-NLS-1$
+    	for (int l = 1; l <= MAX_OUTLINE_LEVEL; l++)
+    		levels[l] = String.valueOf(l);
+    	final JComboBox combo = new JComboBox(levels);
+    	combo.setToolTipText(Messages.getString("OutlineLevel.Tooltip")); //$NON-NLS-1$
+    	combo.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				setMeAsLastGraphicManager();
+				int index = combo.getSelectedIndex();
+				if (index >= 0 && getCurrentFrame() != null)
+					getCurrentFrame().doExpandToLevel(index == 0 ? Integer.MAX_VALUE : index);
+			}
+		});
+    	JPanel panel = new JPanel(new GridLayout(3, 1));
+    	panel.add(new JLabel(Messages.getString("OutlineLevel.Label"))); //$NON-NLS-1$
+    	panel.add(combo);
+    	return panel;
+    }
+
     public void setRibbon(JRibbonFrame frame, MenuManager menuManger){
     	
     	
 		final JPanel filtersPanel=new JPanel(new GridLayout(3, 1));
 		filterToolBarManager = FilterToolBarManager.create(getMenuManager());
 		filterToolBarManager.addButtonsInRibbonBand(filtersPanel);
-		
+		final JPanel taskFiltersPanel=new JPanel(new GridLayout(3, 1));
+		filterToolBarManager.addLinkedButtonsInRibbonBand(taskFiltersPanel);
+
     	CustomRibbonBandGenerator customBandsGenerator=new CustomRibbonBandGenerator() {
 			
 			@Override
@@ -2383,6 +2597,10 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 				if ("FiltersRibbonBand".equals(ribbonBandName)){
 					return filtersPanel;
 				}
+				if ("TaskFiltersRibbonBand".equals(ribbonBandName))
+					return taskFiltersPanel;
+				if ("ReportLevelRibbonBand".equals(ribbonBandName) || "TaskOutlineLevel".equals(ribbonBandName))
+					return createOutlineLevelPanel();
 				else return null;
 			}
 		};
@@ -2655,6 +2873,11 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 		    addCtrlAccel(KeyEvent.VK_I, ACTION_INSERT_TASK, null);
 		    addCtrlAccel(KeyEvent.VK_PERIOD, ACTION_INDENT, null);
 		    addCtrlAccel(KeyEvent.VK_COMMA, ACTION_OUTDENT, null);
+		    // MS Project shortcuts
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, InputEvent.ALT_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), ACTION_INDENT, null);
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_LEFT, InputEvent.ALT_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), ACTION_OUTDENT, null);
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_F2, InputEvent.CTRL_DOWN_MASK), ACTION_LINK, null);
+		    addAccel(KeyStroke.getKeyStroke(KeyEvent.VK_F2, InputEvent.CTRL_DOWN_MASK | InputEvent.SHIFT_DOWN_MASK), ACTION_UNLINK, null);
 		    addCtrlAccel(KeyEvent.VK_PLUS, ACTION_EXPAND, new ExpandAction());
 		    addCtrlAccel(KeyEvent.VK_ADD, ACTION_EXPAND, new ExpandAction());
 		    addCtrlAccel(KeyEvent.VK_EQUALS, ACTION_EXPAND, new ExpandAction());
@@ -2666,10 +2889,13 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
     }
 
     private void addCtrlAccel(int vk, String actionConstant, Action action) {
+		KeyStroke key = KeyStroke.getKeyStroke(vk, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()); //claur use getMenuShortcutKeyMask so it work on Mac too.
+		addAccel(key, actionConstant, action);
+	}
+
+    private void addAccel(KeyStroke key, String actionConstant, Action action) {
 		RootPaneContainer root = (RootPaneContainer)container;
 		InputMap inputMap = root.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
-
-		KeyStroke key = KeyStroke.getKeyStroke(vk, Toolkit.getDefaultToolkit().getMenuShortcutKeyMask()); //claur use getMenuShortcutKeyMask so it work on Mac too.
 		inputMap.put(key, actionConstant);
 		if (action == null)
 			action = menuManager.getActionFromId(actionConstant);
