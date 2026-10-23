@@ -55,17 +55,20 @@
  *******************************************************************************/
 package com.projectlibre1.dialog;
 
+import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.text.MessageFormat;
 import java.util.List;
 import java.util.prefs.Preferences;
 
+import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 
 import com.jgoodies.forms.builder.DefaultFormBuilder;
@@ -91,6 +94,7 @@ public final class AutoLinkDialog extends AbstractDialog {
 	private static final int[] DEFAULT_SCOPES = { AutoLinkOptions.ROW, AutoLinkOptions.FUNCTION };
 	private static final int[] SCOPE_VALUES = { AutoLinkOptions.ROW, AutoLinkOptions.FUNCTION };
 	private static final int MAX_CIRCULAR_TASKS_SHOWN = 5;
+	private static final int INDENT = 20; // pixels, for the options below a check box
 
 	private final String[] activityNames = UlnlWbsParser.DEFAULT_ACTIVITY_NAMES;
 	private final String[] activityCodes = UlnlWbsParser.DEFAULT_ACTIVITY_CODES;
@@ -175,30 +179,31 @@ public final class AutoLinkDialog extends AbstractDialog {
 
 	public JComponent createContentPanel() {
 		updatePreview();
-		FormLayout layout = new FormLayout("12dlu, default, 3dlu, 140dlu:grow", ""); // cols //$NON-NLS-1$ //$NON-NLS-2$
+		// a single column: the options below a check box are indented by a border
+		FormLayout layout = new FormLayout("300dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		builder.appendSeparator(Messages.getString("AutoLink.Scope")); //$NON-NLS-1$
-		builder.append(wholeProject, 4);
-		builder.nextLine();
-		builder.append(selectedTasks, 4);
-		builder.nextLine();
+		builder.append(wholeProject);
+		builder.append(selectedTasks);
 		builder.appendSeparator(Messages.getString("AutoLink.Rules")); //$NON-NLS-1$
-		builder.append(linkActivities, 4);
-		builder.nextLine();
+		builder.append(linkActivities);
 		for (int i = 0; i < scopes.length; i++) {
-			builder.append(""); //$NON-NLS-1$
-			builder.append(activityNames[i] + " → " + activityNames[i + 1], scopes[i]); //$NON-NLS-1$
-			builder.nextLine();
+			JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+			row.add(new JLabel(activityNames[i] + " → " + activityNames[i + 1])); //$NON-NLS-1$
+			row.add(scopes[i]);
+			builder.append(indented(row));
 		}
-		builder.append(linkSequences, 4);
-		builder.nextLine();
-		builder.append(""); //$NON-NLS-1$
-		builder.append(new JLabel("<html><div style='width:360px'>" + Messages.getString("AutoLink.SequencesHelp") + "</div></html>"), 3); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		builder.nextLine();
+		builder.append(linkSequences);
+		builder.append(indented(new JLabel("<html><div style='width:380px'>" + Messages.getString("AutoLink.SequencesHelp") + "</div></html>"))); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		builder.appendSeparator(Messages.getString("AutoLink.Preview")); //$NON-NLS-1$
-		builder.append(preview, 4);
+		builder.append(preview);
 		return builder.getPanel();
+	}
+
+	private static JComponent indented(JComponent component) {
+		component.setBorder(BorderFactory.createEmptyBorder(0, INDENT, 0, 0));
+		return component;
 	}
 
 	private AutoLinkOptions options() {
