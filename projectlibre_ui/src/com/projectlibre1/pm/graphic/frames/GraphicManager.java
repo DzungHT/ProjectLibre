@@ -2587,7 +2587,9 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 		final JPanel filtersPanel=new JPanel(new GridLayout(3, 1));
 		filterToolBarManager = FilterToolBarManager.create(getMenuManager());
 		filterToolBarManager.addButtonsInRibbonBand(filtersPanel);
-		
+		final JPanel taskFiltersPanel=new JPanel(new GridLayout(3, 1));
+		filterToolBarManager.addLinkedButtonsInRibbonBand(taskFiltersPanel);
+
     	CustomRibbonBandGenerator customBandsGenerator=new CustomRibbonBandGenerator() {
 			
 			@Override
@@ -2595,6 +2597,8 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 				if ("FiltersRibbonBand".equals(ribbonBandName)){
 					return filtersPanel;
 				}
+				if ("TaskFiltersRibbonBand".equals(ribbonBandName))
+					return taskFiltersPanel;
 				if ("ReportLevelRibbonBand".equals(ribbonBandName) || "TaskOutlineLevel".equals(ribbonBandName))
 					return createOutlineLevelPanel();
 				else return null;

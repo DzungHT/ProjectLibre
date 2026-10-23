@@ -57,6 +57,8 @@ package com.projectlibre1.toolbar;
 
 import java.awt.Component;
 import java.awt.Dimension;
+import java.util.ArrayList;
+import java.util.List;
 
 import javax.swing.Box;
 import javax.swing.JComponent;
@@ -78,6 +80,8 @@ public class FilterToolBarManager implements MenuActionConstants{
 	protected TransformComboBox sortersComboBox;
 	protected TransformComboBox groupersComboBox;
 	protected Component separator1,separator2,separator3,filler;
+	/** extra combos showing the same filter, sort and group, e.g. in another ribbon tab */
+	protected List<TransformComboBox> linkedComboBoxes=new ArrayList<TransformComboBox>();
 	
 
 	private FilterToolBarManager(MenuManager menuManager) {
@@ -131,6 +135,22 @@ public class FilterToolBarManager implements MenuActionConstants{
 		groupersComboBox.addActionListener(menuManager.getActionFromId(groupersComboBox.getActionCommand()));
 	}
 
+	/** Adds another filter, sort and group combo set sharing the models of the main one, so both show the same selection */
+	public void addLinkedButtonsInRibbonBand(JComponent component) {
+		addLinkedComboBox(component,filtersComboBox,"Filters");
+		addLinkedComboBox(component,sortersComboBox,"Sorts");
+		addLinkedComboBox(component,groupersComboBox,"Grouping");
+	}
+	private void addLinkedComboBox(JComponent component,TransformComboBox main,String docHelp) {
+		TransformComboBox combo=new TransformComboBox(menuManager,main.getActionCommand(),main.type);
+		combo.setModel(main.getModel());
+		setComboSize(combo);
+		HelpUtil.addDocHelp(combo,docHelp);
+		combo.addActionListener(menuManager.getActionFromId(combo.getActionCommand()));
+		component.add(combo);
+		linkedComboBoxes.add(combo);
+	}
+
 	public void removeButtons(JComponent bar) {
 		if (bar != null) {
 			bar.remove(filler);
@@ -162,6 +182,8 @@ public class FilterToolBarManager implements MenuActionConstants{
 		filtersComboBox.setEnabled(enable);
 		sortersComboBox.setEnabled(enable);
 		groupersComboBox.setEnabled(enable);
+		for (TransformComboBox combo : linkedComboBoxes)
+			combo.setEnabled(enable);
 	}
 	
 	public void transformBasedOnValue() {
