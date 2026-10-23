@@ -141,6 +141,7 @@ import com.projectlibre1.contrib.ClassLoaderUtils;
 import com.projectlibre1.dialog.AboutDialog;
 import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
+import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.EffortReportDialog;
@@ -1675,13 +1676,38 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			List<UlnlWbsParser.WbsItem> wbs = ImportUlnlDialog.doDialog();
 			if (wbs == null)
 				return;
+			final UlnlWbsImporter importer = new UlnlWbsImporter(getCurrentFrame().getProject(), wbs);
+			final String[] messages = {
+					Messages.getString("ImportUlnlDialog.Removing"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.Creating"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.Inserting"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.SettingWork"), //$NON-NLS-1$
+					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
 			Frame f = getFrameInstance();
-			Cursor cur = f.getCursor();
-			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR)); // a few seconds for thousands of tasks
 			try {
-				UlnlWbsImporter.replaceWbs(getCurrentFrame().getProject(), wbs);
+				BusyOperationDialog.run(f, Messages.getString("ImportUlnlDialog.Progress"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) { // show the first message before the removal of the old tasks
+							started = true;
+							dialog.setCancelable(false); // the confirmation was already given, the project changes from the first step
+							dialog.setProgress(messages[importer.getPhase()], 0, 0);
+							dialog.endSlice();
+							return false;
+						}
+						if (importer.next())
+							return true;
+						dialog.setProgress(messages[importer.getPhase()], importer.getDone(), importer.getTotal());
+						if (importer.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
 			} finally {
-				f.setCursor(cur);
+				importer.close();
 			}
 		}
 		protected boolean allowed(boolean enable) {

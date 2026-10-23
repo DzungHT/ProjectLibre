@@ -55,7 +55,9 @@
  *******************************************************************************/
 package com.projectlibre1.exchange.ulnl;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,13 +75,52 @@ import com.projectlibre1.pm.task.Project;
 /**
  * Replaces the WBS of a project with the tree read from a ULNL workbook.
  * Project information, resources and calendars are kept. The whole import is a single undo step.
+ * The work is done in small steps by next(), so that a progress dialog can repaint between them.
  */
 public class UlnlWbsImporter {
+	public static final int REMOVING = 0;
+	public static final int CREATING = 1;
+	public static final int INSERTING = 2;
+	public static final int SETTING_WORK = 3;
+	public static final int RECALCULATING = 4;
+	public static final int DONE = 5;
 
+	private final Project project;
+	private final NodeModel model;
+	private final List<UlnlWbsParser.WbsItem> roots;
+	private int phase = REMOVING;
+	private int done = 0;
+	private int total = 0;
+	private boolean undoStarted = false;
+	private int transactionId = 0;
+
+	private final Deque<Pending> pending = new ArrayDeque<Pending>();
+	private final List<Node> rootNodes = new ArrayList<Node>();
+	private final Map<NormalTask, Double> activities = new LinkedHashMap<NormalTask, Double>();
+	private Iterator<Map.Entry<NormalTask, Double>> workIterator;
+
+	/** Does the whole import at once */
 	public static void replaceWbs(Project project, List<UlnlWbsParser.WbsItem> roots) {
-		NodeModel model = project.getTaskOutline();
-		project.beginUndoUpdate();
+		UlnlWbsImporter importer = new UlnlWbsImporter(project, roots);
 		try {
+			while (!importer.next());
+		} finally {
+			importer.close();
+		}
+	}
+
+	public UlnlWbsImporter(Project project, List<UlnlWbsParser.WbsItem> roots) {
+		this.project = project;
+		this.model = project.getTaskOutline();
+		this.roots = roots;
+	}
+
+	/** Does a small piece of the work. Returns true when the import is done */
+	public boolean next() {
+		switch (phase) {
+		case REMOVING:
+			project.beginUndoUpdate();
+			undoStarted = true;
 			List<Node> oldNodes = new ArrayList<Node>();
 			for (Iterator i = model.getChildren(null).iterator(); i.hasNext();) {
 				Node node = (Node) i.next();
@@ -88,42 +129,121 @@ public class UlnlWbsImporter {
 			}
 			if (!oldNodes.isEmpty())
 				model.remove(oldNodes, NodeModel.NORMAL, true);
-
-			List<Node> rootNodes = new ArrayList<Node>();
-			Map<NormalTask, Double> activities = new LinkedHashMap<NormalTask, Double>();
-			for (UlnlWbsParser.WbsItem item : roots)
-				rootNodes.add(createNode(project, item, null, activities));
-			model.paste(null, rootNodes, 0, NodeModel.NORMAL); // before the blank rows left by the removal
-
-			// work is set once the tasks are connected to the project and its scheduling
-			int transactionId = project.fireMultipleTransaction(0, true);
-			try {
-				for (Map.Entry<NormalTask, Double> entry : activities.entrySet()) {
-					NormalTask task = entry.getKey();
-					task.setWork(Duration.getInstance(entry.getValue(), TimeUnit.HOURS));
-					task.markTaskAsNeedingRecalculation();
-				}
-			} finally {
-				project.fireMultipleTransaction(transactionId, false);
+			for (int i = roots.size() - 1; i >= 0; i--)
+				pending.push(new Pending(roots.get(i), null));
+			total = count(roots);
+			done = 0;
+			phase = CREATING;
+			return false;
+		case CREATING:
+			if (!pending.isEmpty()) {
+				createNode(pending.pop());
+				done++;
+				return false;
 			}
-		} finally {
-			project.endUndoUpdate();
+			phase = INSERTING;
+			done = total = 0;
+			return false;
+		case INSERTING:
+			model.paste(null, rootNodes, 0, NodeModel.NORMAL); // before the blank rows left by the removal
+			// work is set once the tasks are connected to the project and its scheduling
+			transactionId = project.fireMultipleTransaction(0, true);
+			workIterator = activities.entrySet().iterator();
+			total = activities.size();
+			done = 0;
+			phase = SETTING_WORK;
+			return false;
+		case SETTING_WORK:
+			if (workIterator.hasNext()) {
+				Map.Entry<NormalTask, Double> entry = workIterator.next();
+				NormalTask task = entry.getKey();
+				task.setWork(Duration.getInstance(entry.getValue(), TimeUnit.HOURS));
+				task.markTaskAsNeedingRecalculation();
+				done++;
+				return false;
+			}
+			phase = RECALCULATING;
+			done = total = 0;
+			return false;
+		case RECALCULATING:
+			close();
+			project.recalculate();
+			phase = DONE;
+			return true;
+		default:
+			return true;
 		}
-		project.recalculate();
 	}
 
-	private static Node createNode(Project project, UlnlWbsParser.WbsItem item, NormalTask parent, Map<NormalTask, Double> activities) {
+	/** Ends the transaction and the undo step. Called at the end, or if the import stops on an error */
+	public void close() {
+		try {
+			if (transactionId != 0) {
+				int id = transactionId;
+				transactionId = 0;
+				project.fireMultipleTransaction(id, false);
+			}
+		} finally {
+			if (undoStarted) {
+				undoStarted = false;
+				project.endUndoUpdate();
+			}
+		}
+	}
+
+	/** One of REMOVING, CREATING, INSERTING, SETTING_WORK, RECALCULATING, DONE: what the next call to next() does */
+	public int getPhase() {
+		return phase;
+	}
+
+	/** True if the next call to next() is a single long operation */
+	public boolean isLongStep() {
+		return phase == REMOVING || phase == INSERTING || phase == RECALCULATING;
+	}
+
+	/** Tasks processed in the current phase */
+	public int getDone() {
+		return done;
+	}
+
+	/** Tasks to process in the current phase, 0 if it is a single operation */
+	public int getTotal() {
+		return total;
+	}
+
+	private void createNode(Pending p) {
+		UlnlWbsParser.WbsItem item = p.item;
 		Node node = NodeFactory.getInstance().createTask(project);
 		NormalTask task = (NormalTask) node.getImpl();
 		task.setName(item.getName());
-		task.setWbsParent(parent);
+		task.setWbsParent(p.parent == null ? null : (NormalTask) p.parent.getImpl());
 		if (item.isActivity()) {
 			task.setSchedulingType(SchedulingType.FIXED_WORK);
 			task.setEstimated(false);
 			activities.put(task, item.getWork());
 		}
-		for (UlnlWbsParser.WbsItem child : item.getChildren())
-			node.add(createNode(project, child, task, activities));
-		return node;
+		if (p.parent == null)
+			rootNodes.add(node);
+		else
+			p.parent.add(node);
+		List<UlnlWbsParser.WbsItem> children = item.getChildren();
+		for (int i = children.size() - 1; i >= 0; i--) // so that the children are created in order
+			pending.push(new Pending(children.get(i), node));
+	}
+
+	private static int count(List<UlnlWbsParser.WbsItem> items) {
+		int n = items.size();
+		for (UlnlWbsParser.WbsItem item : items)
+			n += count(item.getChildren());
+		return n;
+	}
+
+	private static class Pending {
+		final UlnlWbsParser.WbsItem item;
+		final Node parent;
+		Pending(UlnlWbsParser.WbsItem item, Node parent) {
+			this.item = item;
+			this.parent = parent;
+		}
 	}
 }
