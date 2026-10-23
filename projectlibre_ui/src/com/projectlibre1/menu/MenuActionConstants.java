@@ -148,6 +148,13 @@ public interface MenuActionConstants {
 	public static final String ACTION_IMPORT_WBS_EXCEL        = "ImportWbsExcel";
 	public static final String ACTION_EFFORT_REPORT          = "EffortReport";
 	public static final String ACTION_EFFORT_COLUMNS         = "EffortColumns";
+	public static final String ACTION_ESTIMATE_COLUMNS       = "EstimateColumns";
+	public static final String ACTION_SET_ORIGINAL_ESTIMATE  = "SetOriginalEstimate";
+	public static final String ACTION_RESET_WORK_TO_ESTIMATE = "ResetWorkToEstimate";
+	public static final String ACTION_CANCEL_TASK            = "CancelTask";
+	public static final String ACTION_UNCANCEL_TASK          = "UncancelTask";
+	public static final String ACTION_AUTO_LINK              = "AutoLink";
+	public static final String ACTION_UPDATE_ULNL            = "UpdateUlnl";
 	public static final String ACTION_SAVE_BASELINE           = "SaveBaseline";
 	public static final String ACTION_CLEAR_BASELINE          = "ClearBaseline";
 	public static final String ACTION_LOCALE		          = "LocaleAction";

@@ -63,6 +63,7 @@ import java.util.Collection;
 import org.apache.commons.collections.Closure;
 
 import com.projectlibre1.association.AssociationList;
+import com.projectlibre1.association.IndexedAssociationList;
 import com.projectlibre1.functor.CollectionVisitor;
 import com.projectlibre1.pm.calendar.HasCalendar;
 
@@ -85,6 +86,11 @@ public class HasDependenciesImpl implements HasDependencies, Serializable {
 	}
 	private transient AssociationList predecessors = new AssociationList();
 	private transient AssociationList successors = new AssociationList();
+	/** Indexed lists, for the sentinels of the schedule that have a dependency with each task. To call while the lists are empty */
+	public void useIndexedLists() {
+		predecessors = new IndexedAssociationList();
+		successors = new IndexedAssociationList();
+	}
 	/* (non-Javadoc)
 	 * @see com.projectlibre1.pm.dependency.HasDependencies#getWorkCalendar()
 	 */

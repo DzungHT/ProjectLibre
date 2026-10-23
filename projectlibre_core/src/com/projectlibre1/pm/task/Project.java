@@ -1412,6 +1412,9 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 		Task task, previousParentTask, newParentTask;
 		int count=e.getNodes().length;
 		if (count==0) return;
+		// the bounds of the schedule are marked once, not for each node: it goes through all the tasks
+		getSchedulingAlgorithm().setBoundsMarkingDeferred(true);
+		try {
 		for (int i=0;i<count;i++){
 			node=(Node)e.getNodes()[i];
 			if (!(node.getImpl() instanceof Task)) continue;
@@ -1458,6 +1461,9 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 					DependencyService.getInstance().removeAnyDependencies(task, _newParentTask,eventSource);
 				}
 			});
+		}
+		} finally {
+			getSchedulingAlgorithm().setBoundsMarkingDeferred(false);
 		}
 		if (!e.isVoid()) { // if the event was not the promotion of a void node
 			// The critical path needs resetting because its internal list must be rebuilt as it depends on hierarchy

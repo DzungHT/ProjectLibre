@@ -485,4 +485,13 @@ public class Dependency implements Association, BelongsToDocument, DataObject {
 		this.disabled = disabled;
 	}
 
+	/** Link created by Auto Link: running it again replaces these links, the other ones are kept */
+	private boolean auto = false;
+	public boolean isAuto() {
+		return auto;
+	}
+	public void setAuto(boolean auto) {
+		this.auto = auto;
+	}
+
 }

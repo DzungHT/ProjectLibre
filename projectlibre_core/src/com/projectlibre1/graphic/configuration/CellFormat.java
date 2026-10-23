@@ -71,6 +71,7 @@ public class CellFormat {
 	protected String font;
 	protected boolean bold;
 	protected boolean italic;
+	protected boolean strikethrough;
 	protected String background;
 	protected String foreground;
 	protected boolean compositeIcon;
@@ -130,6 +131,13 @@ public class CellFormat {
 	public void setItalic(boolean italic) {
 		this.italic = italic;
 	}
+	/** Text struck through, for cancelled tasks */
+	public boolean isStrikethrough() {
+		return strikethrough;
+	}
+	public void setStrikethrough(boolean strikethrough) {
+		this.strikethrough = strikethrough;
+	}
 	
 	public void reset(){
 		fontObject=null;
@@ -139,6 +147,7 @@ public class CellFormat {
 		font=null;
 		bold=false;
 		italic=false;
+		strikethrough=false;
 		background=null;
 		foreground=null;
 		compositeIcon=false;

@@ -75,6 +75,18 @@ public class PredecessorTaskList {
 	private int numberOfReverseScheduledTasks = 0;
 	public static final int CALCULATION_STATUS_STEP = 3;
 	private SchedulingAlgorithm schedulingAlgorithm;
+	// while pasting many tasks, they are only added at the end: the list is put in order once afterwards, see CriticalPath
+	private boolean appendOnly = false;
+	private boolean appended = false;
+	void setAppendOnly(boolean appendOnly) {
+		this.appendOnly = appendOnly;
+	}
+	/** True if tasks were added at the end since the last call. Resets the flag */
+	boolean takeAppended() {
+		boolean result = appended;
+		appended = false;
+		return result;
+	}
 	PredecessorTaskList(SchedulingAlgorithm schedulingAlgorithm) {
 		this.schedulingAlgorithm = schedulingAlgorithm;
 	}
@@ -153,6 +165,13 @@ public class PredecessorTaskList {
         // go thru in reverse order inserting after first predecessor or parent encountered
         ListIterator i = list.listIterator();
         TaskReference taskReference = new TaskReference(task);
+        if (appendOnly) { // before the end sentinel, in order later
+        	ListIterator end = list.listIterator(list.size());
+        	end.previous();
+        	end.add(taskReference);
+        	appended = true;
+        	return;
+        }
         while (i.hasNext()) {
         	previousTaskReference = (TaskReference)i.next();
         	previousTask = previousTaskReference.getTask();

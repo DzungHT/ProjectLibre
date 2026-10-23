@@ -82,6 +82,10 @@ public interface SchedulingAlgorithm extends ObjectEvent.Listener, HasSentinels,
 	public void addObject(Object task);
 	Document getMasterDocument();
 	void markBoundsAsDirty();
+	/** While deferred, markBoundsAsDirty() is done once, when the deferral ends. For changes of many tasks at once */
+	void setBoundsMarkingDeferred(boolean deferred);
+	/** While deferred, new tasks are not put in order one by one: it is done once, by a reset, when the deferral ends */
+	void setArrangementDeferred(boolean deferred);
 	public void objectChanged(ObjectEvent objectEvent);
 	public void addSubproject(Task subproject);
 	public void initEarliestAndLatest();

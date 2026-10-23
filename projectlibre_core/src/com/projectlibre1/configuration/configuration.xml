@@ -301,6 +301,18 @@
 			<field property="manHours" id="Field.manHours" sum="This" />
 			<field property="manDays" id="Field.manDays" readOnly="true" sum="This" />
 			<field property="manMonths" id="Field.manMonths" readOnly="true" sum="This" />
+			<!-- original estimate from the ULNL, not used by the scheduling. Summaries compute their own value from the leaf tasks -->
+			<field property="originalEstimate" id="Field.originalEstimate" duration="true" work="true" sum="This" />
+			<field property="estimateVariance" id="Field.estimateVariance" readOnly="true" sum="This" />
+			<!-- information from the ULNL, used to link the tasks and to import a new version of the ULNL -->
+			<field property="ulnlKey" id="Field.ulnlKey" readOnly="true" />
+			<field property="functionCode" id="Field.functionCode" />
+			<field property="activity" id="Field.activity" />
+			<field property="lane" id="Field.lane" />
+			<!-- cancelled tasks: set by the Cancel Task and Un-cancel Task commands. The reason can be edited while the task is cancelled -->
+			<field property="cancelled" id="Field.cancelled" readOnly="true" />
+			<field property="cancelReason" id="Field.cancelReason" />
+			<field property="cancelDate" id="Field.cancelDate" date="true" readOnly="true" />
 
 		</class>
 		<class name="com.projectlibre1.pm.snapshot.BaselineScheduleFields">

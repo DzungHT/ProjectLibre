@@ -86,17 +86,21 @@ import com.projectlibre1.strings.Messages;
 import com.projectlibre1.util.Alert;
 
 /**
- * Options for importing a WBS from a ULNL workbook: file, sheet, first data row
- * and the column holding the work of each activity.
+ * Options for importing a WBS from a ULNL workbook: file, sheet, first data row,
+ * the column holding the work of each activity and the column of the function code.
+ * The function codes are then mapped to lanes (BE, FE, Mobile...).
  */
 public final class ImportUlnlDialog extends AbstractDialog {
 	private static final long serialVersionUID = 1L;
 	private static final String PREF_FILE = "ulnlFile"; //$NON-NLS-1$
 	private static final String PREF_COLUMN = "ulnlColumn"; //$NON-NLS-1$
+	private static final String PREF_FUNCTION_COLUMN = "ulnlFunctionColumn"; //$NON-NLS-1$
+	private static final String FIRST_COLUMN = "A"; //$NON-NLS-1$
 	private static final String FIRST_WORK_COLUMN = "F"; //$NON-NLS-1$
 	private static final String LAST_WORK_COLUMN = "AD"; // at least, more if the sheet uses more columns //$NON-NLS-1$
 
 	private final String[] activityNames = UlnlWbsParser.DEFAULT_ACTIVITY_NAMES;
+	private final String[] activityCodes = UlnlWbsParser.DEFAULT_ACTIVITY_CODES;
 	private final Preferences preferences = Preferences.userNodeForPackage(ImportUlnlDialog.class);
 
 	JTextField file;
@@ -104,6 +108,7 @@ public final class ImportUlnlDialog extends AbstractDialog {
 	JComboBox sheet;
 	JSpinner startRow;
 	JComboBox[] columns;
+	JComboBox functionColumn;
 	JLabel preview;
 
 	private XlsxSheetReader reader;
@@ -115,12 +120,23 @@ public final class ImportUlnlDialog extends AbstractDialog {
 	 * @return the WBS to import, or null if cancelled
 	 */
 	public static List<UlnlWbsParser.WbsItem> doDialog() {
-		ImportUlnlDialog dialog = new ImportUlnlDialog();
+		return doDialog(false);
+	}
+	/**
+	 * @param update true to update the WBS from a new version of the ULNL: the WBS is not replaced, so there is no
+	 * confirmation
+	 * @return the WBS to import, or null if cancelled
+	 */
+	public static List<UlnlWbsParser.WbsItem> doDialog(boolean update) {
+		ImportUlnlDialog dialog = new ImportUlnlDialog(update);
 		return dialog.doModal() ? dialog.result : null;
 	}
 
-	private ImportUlnlDialog() {
-		super(GraphicManager.getFrameInstance(), Messages.getString("ImportUlnlDialog.Title"), true); //$NON-NLS-1$
+	private final boolean update;
+
+	private ImportUlnlDialog(boolean update) {
+		super(GraphicManager.getFrameInstance(), Messages.getString(update ? "UlnlUpdate.Title" : "ImportUlnlDialog.Title"), true); //$NON-NLS-1$ //$NON-NLS-2$
+		this.update = update;
 		file = new JTextField(30);
 		file.setEditable(false);
 		browse = new JButton(Messages.getString("ImportUlnlDialog.Browse")); //$NON-NLS-1$
@@ -129,6 +145,7 @@ public final class ImportUlnlDialog extends AbstractDialog {
 		columns = new JComboBox[activityNames.length];
 		for (int i = 0; i < columns.length; i++)
 			columns[i] = new JComboBox();
+		functionColumn = new JComboBox();
 		preview = new JLabel(" "); //$NON-NLS-1$
 
 		browse.addActionListener(new ActionListener() {
@@ -155,6 +172,7 @@ public final class ImportUlnlDialog extends AbstractDialog {
 		};
 		for (int i = 0; i < columns.length; i++)
 			columns[i].addActionListener(columnListener);
+		functionColumn.addActionListener(columnListener);
 	}
 
 	protected boolean bind(boolean get) {
@@ -169,16 +187,22 @@ public final class ImportUlnlDialog extends AbstractDialog {
 			Alert.warn(Messages.getString("ImportUlnlDialog.NoFile"), this); //$NON-NLS-1$
 			return false;
 		}
-		result = parser().parse(rows);
+		UlnlWbsParser parser = parser();
+		result = parser.parse(rows);
 		if (result.isEmpty()) {
 			Alert.warn(Messages.getString("ImportUlnlDialog.NoTasks"), this); //$NON-NLS-1$
 			return false;
 		}
-		if (!Alert.okCancel(Messages.getString("ImportUlnlDialog.ConfirmReplace"))) //$NON-NLS-1$
-			return false;
 		preferences.put(PREF_FILE, file.getText());
 		for (int i = 0; i < columns.length; i++)
 			preferences.put(PREF_COLUMN + i, selectedColumn(i));
+		preferences.put(PREF_FUNCTION_COLUMN, selectedFunctionColumn());
+		Map<String, String> lanes = UlnlLaneMappingDialog.doDialog(parser.summarize(result).rowsByFunctionCode);
+		if (lanes == null)
+			return false;
+		UlnlWbsParser.applyLanes(result, lanes);
+		if (!update && !Alert.okCancel(Messages.getString("ImportUlnlDialog.ConfirmReplace"))) //$NON-NLS-1$
+			return false;
 		return true;
 	}
 
@@ -199,6 +223,8 @@ public final class ImportUlnlDialog extends AbstractDialog {
 			builder.append(activityNames[i], columns[i]);
 			builder.nextLine();
 		}
+		builder.append(Messages.getString("ImportUlnlDialog.FunctionCodeColumn"), functionColumn); //$NON-NLS-1$
+		builder.nextLine();
 		builder.appendSeparator(Messages.getString("ImportUlnlDialog.Preview")); //$NON-NLS-1$
 		builder.append(preview, 5);
 		return builder.getPanel();
@@ -273,17 +299,23 @@ public final class ImportUlnlDialog extends AbstractDialog {
 					: preferences.get(PREF_COLUMN + i, UlnlWbsParser.DEFAULT_ACTIVITY_COLUMNS[i]);
 			last = Math.max(last, XlsxSheetReader.columnIndex(selections[i]));
 		}
-		for (int i = 0; i < columns.length; i++) {
-			String selected = selections[i];
-			columns[i].removeAllItems();
-			for (int c = first; c <= last; c++) {
-				ColumnItem item = new ColumnItem(XlsxSheetReader.columnName(c), header(rows, XlsxSheetReader.columnName(c)));
-				columns[i].addItem(item);
-				if (item.column.equals(selected))
-					columns[i].setSelectedItem(item);
-			}
-		}
+		String function = functionColumn.getItemCount() > 0 ? selectedFunctionColumn()
+				: preferences.get(PREF_FUNCTION_COLUMN, UlnlWbsParser.DEFAULT_FUNCTION_CODE_COLUMN);
+		last = Math.max(last, XlsxSheetReader.columnIndex(function));
+		for (int i = 0; i < columns.length; i++)
+			fillColumn(columns[i], rows, first, last, selections[i]);
+		fillColumn(functionColumn, rows, XlsxSheetReader.columnIndex(FIRST_COLUMN), last, function);
 		updating = false;
+	}
+
+	private static void fillColumn(JComboBox combo, Map<Integer, Map<String, String>> rows, int first, int last, String selected) {
+		combo.removeAllItems();
+		for (int c = first; c <= last; c++) {
+			ColumnItem item = new ColumnItem(XlsxSheetReader.columnName(c), header(rows, XlsxSheetReader.columnName(c)));
+			combo.addItem(item);
+			if (item.column.equals(selected))
+				combo.setSelectedItem(item);
+		}
 	}
 
 	private static String header(Map<Integer, Map<String, String>> rows, String column) {
@@ -302,11 +334,16 @@ public final class ImportUlnlDialog extends AbstractDialog {
 		return item == null ? UlnlWbsParser.DEFAULT_ACTIVITY_COLUMNS[i] : item.column;
 	}
 
+	private String selectedFunctionColumn() {
+		ColumnItem item = (ColumnItem) functionColumn.getSelectedItem();
+		return item == null ? UlnlWbsParser.DEFAULT_FUNCTION_CODE_COLUMN : item.column;
+	}
+
 	private UlnlWbsParser parser() {
 		String[] selected = new String[columns.length];
 		for (int i = 0; i < columns.length; i++)
 			selected[i] = selectedColumn(i);
-		return new UlnlWbsParser(((Number) startRow.getValue()).intValue(), activityNames, selected);
+		return new UlnlWbsParser(((Number) startRow.getValue()).intValue(), activityNames, activityCodes, selected, selectedFunctionColumn());
 	}
 
 	/**
@@ -318,7 +355,7 @@ public final class ImportUlnlDialog extends AbstractDialog {
 		String text;
 		if (rows == null) {
 			text = Messages.getString("ImportUlnlDialog.NoFile"); //$NON-NLS-1$
-			for (int i = 0; i < activityNames.length; i++)
+			for (int i = 0; i <= activityNames.length; i++) // and the function codes
 				work.append("<br>&nbsp;"); //$NON-NLS-1$
 		} else {
 			UlnlWbsParser parser = parser();
@@ -326,6 +363,7 @@ public final class ImportUlnlDialog extends AbstractDialog {
 			DecimalFormat hours = new DecimalFormat("#,##0.##"); //$NON-NLS-1$
 			for (int i = 0; i < activityNames.length; i++)
 				work.append("<br>").append(activityNames[i]).append(": ").append(hours.format(summary.workByActivity[i])).append(" h"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			work.append("<br>").append(MessageFormat.format(Messages.getString("ImportUlnlDialog.FunctionCodes"), summary.rowsByFunctionCode.size())); //$NON-NLS-1$ //$NON-NLS-2$
 			int[] count = summary.countByLevel;
 			text = MessageFormat.format(Messages.getString("ImportUlnlDialog.PreviewText"), //$NON-NLS-1$
 					count[1], count[2], count[3], count[4], count[5]);

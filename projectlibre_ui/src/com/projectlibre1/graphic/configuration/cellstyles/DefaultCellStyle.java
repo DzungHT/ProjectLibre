@@ -58,6 +58,7 @@ package com.projectlibre1.graphic.configuration.cellstyles;
 import com.projectlibre1.pm.graphic.model.cache.GraphicNode;
 import com.projectlibre1.graphic.configuration.CellFormat;
 import com.projectlibre1.graphic.configuration.CellStyle;
+import com.projectlibre1.pm.task.Task;
 
 
 public class DefaultCellStyle implements CellStyle {
@@ -72,6 +73,11 @@ public class DefaultCellStyle implements CellStyle {
 		format.setBold(node.isSummary());
 		format.setItalic(node.isAssignment());
 		format.setCompositeIcon(node.isSummary()||node.isValidLazyParent());
+		Object impl=node.getNode()==null?null:node.getNode().getImpl();
+		if (impl instanceof Task&&((Task)impl).isCancelled()){ // cancelled tasks are struck through and gray
+			format.setStrikethrough(true);
+			format.setForeground("GRAY");
+		}
 		if (node.getSubprojectLevel()>0) format.setBackground(node.getSubprojectLevel()%2==0?"MULTIPROJET0":"MULTIPROJET1");
 		if (node.isGroup()){
 			if (node.getLevel()==1) format.setBackground("TAN");

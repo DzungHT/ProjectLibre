@@ -105,6 +105,9 @@ public class SpreadSheetPopupMenu extends JPopupMenu {
 						Environment.isNewLook()?"menu24.link":"menu.link");
 				add(new MainMenuAction(Messages.getString("Text.unlinkingTasks"),MenuActionConstants.ACTION_UNLINK),
 						Environment.isNewLook()?"menu24.unlink":"menu.unlink");
+				addSeparator();
+				add(new MainMenuAction(Messages.getString("CancelTask.Cancel"),MenuActionConstants.ACTION_CANCEL_TASK),null);
+				add(new MainMenuAction(Messages.getString("CancelTask.Uncancel"),MenuActionConstants.ACTION_UNCANCEL_TASK),null);
 			}
 		}
 
@@ -156,7 +159,8 @@ public class SpreadSheetPopupMenu extends JPopupMenu {
 	    
 	    private void add(Action action, String iconName) {
 	    	JMenuItem menuItem = new JMenuItem(action);
-	    	menuItem.setIcon(IconManager.getIcon(iconName));
+	    	if (iconName != null)
+	    		menuItem.setIcon(IconManager.getIcon(iconName));
 	    	add(menuItem);
 	    }
 

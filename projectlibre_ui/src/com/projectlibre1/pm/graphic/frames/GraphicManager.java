@@ -144,6 +144,10 @@ import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
+import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.dialog.UlnlDiffDialog;
+import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
+import com.projectlibre1.pm.dependency.autolink.AutoLinker;
 import com.projectlibre1.dialog.EffortReportDialog;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
 import com.projectlibre1.dialog.ImportWbsExcelDialog;
@@ -166,6 +170,8 @@ import com.projectlibre1.document.ObjectEvent;
 import com.projectlibre1.exchange.ResourceMappingForm;
 import com.projectlibre1.exchange.ulnl.UlnlWbsImporter;
 import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
+import com.projectlibre1.exchange.ulnl.UlnlWbsDiff;
+import com.projectlibre1.exchange.ulnl.UlnlWbsUpdater;
 import com.projectlibre1.exchange.wbsexcel.WbsExcelExporter;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.SpreadSheetFieldArray;
@@ -1040,6 +1046,13 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_IMPORT_WBS_EXCEL, new ImportWbsExcelAction());
 		actionsMap.addHandler(ACTION_EFFORT_REPORT, new EffortReportAction());
 		actionsMap.addHandler(ACTION_EFFORT_COLUMNS, new EffortColumnsAction());
+		actionsMap.addHandler(ACTION_ESTIMATE_COLUMNS, new EstimateColumnsAction());
+		actionsMap.addHandler(ACTION_SET_ORIGINAL_ESTIMATE, new SetOriginalEstimateAction());
+		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
+		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
+		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
+		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
+		actionsMap.addHandler(ACTION_UPDATE_ULNL, new UpdateUlnlAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1638,9 +1651,195 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		}
 	}
 	/** Shows the MH, MD and MM columns after the Work column of the task sheet, or hides them */
-	public class EffortColumnsAction extends MenuActionsMap.DocumentMenuAction {
+	public class EffortColumnsAction extends ToggleColumnsAction {
 		private static final long serialVersionUID = 1L;
-		private final String[] ids = {"Field.manHours", "Field.manDays", "Field.manMonths"}; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		public EffortColumnsAction() {
+			super(new String[] {"Field.manHours", "Field.manDays", "Field.manMonths"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		}
+	}
+	/** Shows the original estimate and ULNL columns after the Work column of the task sheet, or hides them */
+	public class EstimateColumnsAction extends ToggleColumnsAction {
+		private static final long serialVersionUID = 1L;
+		public EstimateColumnsAction() {
+			super(new String[] {"Field.originalEstimate", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+		}
+	}
+	public class SetOriginalEstimateAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive() && getCurrentFrame().doOriginalEstimate(true) == 0)
+				Alert.warn(Messages.getString("OriginalEstimate.NothingSet"), getFrameInstance()); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	public class ResetWorkToEstimateAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive() && getCurrentFrame().doOriginalEstimate(false) == 0)
+				Alert.warn(Messages.getString("OriginalEstimate.NothingReset"), getFrameInstance()); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/**
+	 * Updates the WBS from a new version of the ULNL: the differences are shown, the chosen ones applied keeping the
+	 * links and assignments, see UlnlWbsDiff. Then Auto Link can be run for the changes
+	 */
+	public class UpdateUlnlAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			List<UlnlWbsParser.WbsItem> wbs = ImportUlnlDialog.doDialog(true);
+			if (wbs == null)
+				return;
+			Frame f = getFrameInstance();
+			String reasonFormat = Messages.getString("UlnlUpdate.RemovedReason"); //$NON-NLS-1$
+			String removedReason = MessageFormat.format(reasonFormat, new java.text.SimpleDateFormat("dd/MM/yyyy").format(new java.util.Date())); //$NON-NLS-1$
+			String removedPrefix = reasonFormat.substring(0, Math.max(0, reasonFormat.indexOf("{0}"))); //$NON-NLS-1$
+			UlnlWbsDiff diff = UlnlWbsDiff.compare(frame.getProject(), wbs, UlnlWbsParser.DEFAULT_ACTIVITY_CODES,
+					UlnlWbsParser.DEFAULT_ACTIVITY_NAMES, removedPrefix);
+			if (diff.isEmpty()) {
+				Alert.warn(Messages.getString("UlnlUpdate.NoChange"), f); //$NON-NLS-1$
+				return;
+			}
+			if (!diff.getChanges().isEmpty() && !UlnlDiffDialog.doDialog(diff))
+				return; // with no change shown, only the keys and estimates are updated
+			final UlnlWbsUpdater updater = new UlnlWbsUpdater(frame.getProject(), diff, removedReason, frame);
+			final String[] messages = {
+					Messages.getString("UlnlUpdate.Updating"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.Creating"), //$NON-NLS-1$
+					Messages.getString("ImportUlnlDialog.SettingWork"), //$NON-NLS-1$
+					Messages.getString("UlnlUpdate.Cancelling"), //$NON-NLS-1$
+					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
+			try {
+				BusyOperationDialog.run(f, Messages.getString("UlnlUpdate.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) {
+							started = true;
+							dialog.setCancelable(false); // the project changes from the first step
+							dialog.setProgress(messages[updater.getPhase()], 0, updater.getTotal());
+							dialog.endSlice();
+							return false;
+						}
+						if (updater.next())
+							return true;
+						dialog.setProgress(messages[Math.min(updater.getPhase(), messages.length - 1)], updater.getDone(), updater.getTotal());
+						if (updater.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+				return;
+			} finally {
+				updater.close();
+			}
+			if (diff.getChanges().isEmpty())
+				return;
+			if (Alert.okCancel(MessageFormat.format(Messages.getString("UlnlUpdate.Done"), String.valueOf(updater.getChanged())))) { //$NON-NLS-1$
+				Action autoLink = getMenuManager().getActionFromId(ACTION_AUTO_LINK);
+				if (autoLink != null)
+					autoLink.actionPerformed(arg0);
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Links the tasks by activity, see AutoLinkPlan, with a progress dialog */
+	public class AutoLinkAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			final DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			List<Task> selection = new ArrayList<Task>();
+			List impls = frame.getSelectedImpls(true);
+			if (impls != null)
+				for (Object impl : impls)
+					if (impl instanceof Task)
+						selection.add((Task) impl);
+			AutoLinkPlan plan = AutoLinkDialog.doDialog(frame.getProject(), selection);
+			if (plan == null || plan.isEmpty())
+				return;
+			final AutoLinker linker = new AutoLinker(frame.getProject(), plan, frame);
+			final String[] messages = {
+					Messages.getString("AutoLink.Removing"), //$NON-NLS-1$
+					Messages.getString("AutoLink.Creating"), //$NON-NLS-1$
+					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
+			Frame f = getFrameInstance();
+			try {
+				BusyOperationDialog.run(f, Messages.getString("AutoLink.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) {
+							started = true;
+							dialog.setCancelable(false); // the links are changed from the first step
+							dialog.setProgress(messages[linker.getPhase()], 0, linker.getTotal());
+							dialog.endSlice();
+							return false;
+						}
+						if (linker.next())
+							return true;
+						dialog.setProgress(messages[Math.min(linker.getPhase(), messages.length - 1)], linker.getDone(), linker.getTotal());
+						if (linker.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+			} finally {
+				linker.close();
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Cancels or un-cancels the selected tasks */
+	public class CancelTaskAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final boolean cancel;
+		public CancelTaskAction(boolean cancel) {
+			this.cancel = cancel;
+		}
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (isDocumentActive() && getCurrentFrame().doCancelTasks(cancel) == 0)
+				Alert.warn(Messages.getString(cancel ? "CancelTask.NothingCancelled" : "CancelTask.NothingUncancelled"), getFrameInstance()); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Shows columns after the Work column of the task sheet (after the name if there is no Work column), or hides them */
+	public class ToggleColumnsAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		private final String[] ids;
+		public ToggleColumnsAction(String[] ids) {
+			this.ids = ids;
+		}
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
 			if (!isDocumentActive())

@@ -57,6 +57,7 @@ package com.projectlibre1.pm.graphic.spreadsheet.renderer;
 
 import java.awt.Component;
 import java.awt.Font;
+import java.awt.font.TextAttribute;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -74,6 +75,7 @@ public class FontManager {
 	public static Map boldMapping=new HashMap();
 	public static Map italicMapping=new HashMap();
 	public static Map boldItalicMapping=new HashMap();
+	public static Map strikethroughMapping=new HashMap(); // cancelled tasks
 	//fonts are mapped to avoid using deriveFont each time. deriveFont causes useless memory consumption 
 	
 	public static void setComponentFont(CellFormat props, Component component) {
@@ -97,6 +99,17 @@ public class FontManager {
 			if (f==null){
 				f=font.deriveFont(type);
 				map.put(font,f);
+			}
+			component.setFont(f);
+		}
+		if (props.isStrikethrough()){
+			Font base=component.getFont();
+			Font f=(Font)strikethroughMapping.get(base);
+			if (f==null){
+				Map attributes=new HashMap();
+				attributes.put(TextAttribute.STRIKETHROUGH, TextAttribute.STRIKETHROUGH_ON);
+				f=base.deriveFont(attributes);
+				strikethroughMapping.put(base,f);
 			}
 			component.setFont(f);
 		}

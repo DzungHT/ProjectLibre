@@ -61,6 +61,7 @@ import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -69,6 +70,7 @@ import java.util.Map;
 import java.util.Set;
 
 import javax.swing.event.TreeModelListener;
+import javax.swing.tree.TreeNode;
 import javax.swing.tree.TreePath;
 import javax.swing.undo.UndoableEdit;
 import javax.swing.undo.UndoableEditSupport;
@@ -178,6 +180,7 @@ public class DefaultNodeModel implements NodeModel {
 		//hierarchy.add(parent,children,actionType);
 	}
 	public void add(Node parent,List children,int position,int actionType){
+		index(children);
 		hierarchy.add(parent,children,position,actionType);
 		//Undo
 		if (isUndo(actionType)) postEdit(new NodeCreationEdit(this,parent,children,position));
@@ -215,6 +218,7 @@ public class DefaultNodeModel implements NodeModel {
 		//nodes=copy(nodes,NodeModel.SILENT); //make an other copy, in case it is copied more than one time
 		//done in transfert handler
 
+		index(nodes);
 		hierarchy.paste(parent,nodes,position,this,actionType);
 		//Undo
 		if (isUndo(actionType)) postEdit(new NodePasteEdit(this,parent,nodes,position));
@@ -601,8 +605,55 @@ public class DefaultNodeModel implements NodeModel {
 	}
 
 	public Node search(Object key) {
-		//TODO consider using a hashtable instead of searching like this
-		return search(key,getImplComparatorInstance());
+		if (key == null)
+			return search(key,getImplComparatorInstance());
+		// the index is a hint: a node found there is used only if it still has this object and is in the hierarchy
+		Node node = (Node) nodeIndex().get(key);
+		if (node != null && node.getImpl() == key && isInHierarchy(node))
+			return node;
+		node = search(key,getImplComparatorInstance());
+		if (node == null)
+			nodeIndex().remove(key);
+		else
+			nodeIndex().put(key, node);
+		return node;
+	}
+
+	/**
+	 * Node of each object, so that search(Object) does not go through the whole hierarchy each time: with large
+	 * projects, pasting and scheduling search the node of each task. Entries can be out of date, they are checked
+	 * when used. Nodes added or pasted are indexed before they are inserted, as the insertion searches them
+	 */
+	private transient Map nodeIndex = null;
+	private Map nodeIndex() {
+		if (nodeIndex == null)
+			nodeIndex = new IdentityHashMap();
+		return nodeIndex;
+	}
+	private void index(List nodes) {
+		if (nodes == null)
+			return;
+		for (Iterator i = nodes.iterator(); i.hasNext();) {
+			Object next = i.next();
+			if (!(next instanceof Node))
+				continue;
+			Node node = (Node) next;
+			if (node.getImpl() != null)
+				nodeIndex().put(node.getImpl(), node);
+			if (node.getChildCount() > 0) {
+				List children = new ArrayList();
+				for (Enumeration e = node.children(); e.hasMoreElements();)
+					children.add(e.nextElement());
+				index(children);
+			}
+		}
+	}
+	private boolean isInHierarchy(Node node) {
+		Object root = hierarchy.getRoot();
+		for (TreeNode current = node; current != null; current = current.getParent())
+			if (current == root)
+				return true;
+		return false;
 	}
 
 
