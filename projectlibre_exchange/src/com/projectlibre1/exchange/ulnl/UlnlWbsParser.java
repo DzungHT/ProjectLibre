@@ -83,6 +83,8 @@ public class UlnlWbsParser {
 	public static final int HEADER_ROW = 6;
 	public static final String[] DEFAULT_ACTIVITY_NAMES = { "Giải pháp", "Phát triển", "Kiểm thử" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 	public static final String[] DEFAULT_ACTIVITY_CODES = { "GP", "PT", "KT" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	/** Activities whose tasks are linked by lane (BE, FE, Mobile...), see the function codes */
+	public static final String[] LANE_ACTIVITY_CODES = { "PT" }; //$NON-NLS-1$
 	public static final String[] DEFAULT_ACTIVITY_COLUMNS = { "F", "G", "I" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 	public static final String DEFAULT_FUNCTION_CODE_COLUMN = "L"; //$NON-NLS-1$
 	/** Separators of the key: between the names of the levels, before the occurrence number and before the activity code */

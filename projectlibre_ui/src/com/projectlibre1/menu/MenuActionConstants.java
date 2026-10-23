@@ -153,6 +153,7 @@ public interface MenuActionConstants {
 	public static final String ACTION_RESET_WORK_TO_ESTIMATE = "ResetWorkToEstimate";
 	public static final String ACTION_CANCEL_TASK            = "CancelTask";
 	public static final String ACTION_UNCANCEL_TASK          = "UncancelTask";
+	public static final String ACTION_AUTO_LINK              = "AutoLink";
 	public static final String ACTION_SAVE_BASELINE           = "SaveBaseline";
 	public static final String ACTION_CLEAR_BASELINE          = "ClearBaseline";
 	public static final String ACTION_LOCALE		          = "LocaleAction";

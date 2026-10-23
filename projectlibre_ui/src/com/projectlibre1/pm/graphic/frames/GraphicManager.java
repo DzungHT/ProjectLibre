@@ -144,6 +144,9 @@ import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
+import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
+import com.projectlibre1.pm.dependency.autolink.AutoLinker;
 import com.projectlibre1.dialog.EffortReportDialog;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
 import com.projectlibre1.dialog.ImportWbsExcelDialog;
@@ -1045,6 +1048,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
 		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
+		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
 		actionsMap.addHandler(ACTION_BAR, new BarAction());
 		actionsMap.addHandler(ACTION_INSERT_RECURRING, new RecurringTaskAction());
 		actionsMap.addHandler(ACTION_SORT, new SortAction());
@@ -1674,6 +1678,61 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			setMeAsLastGraphicManager();
 			if (isDocumentActive() && getCurrentFrame().doOriginalEstimate(false) == 0)
 				Alert.warn(Messages.getString("OriginalEstimate.NothingReset"), getFrameInstance()); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Links the tasks by activity, see AutoLinkPlan, with a progress dialog */
+	public class AutoLinkAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			final DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			List<Task> selection = new ArrayList<Task>();
+			List impls = frame.getSelectedImpls(true);
+			if (impls != null)
+				for (Object impl : impls)
+					if (impl instanceof Task)
+						selection.add((Task) impl);
+			AutoLinkPlan plan = AutoLinkDialog.doDialog(frame.getProject(), selection);
+			if (plan == null || plan.isEmpty())
+				return;
+			final AutoLinker linker = new AutoLinker(frame.getProject(), plan, frame);
+			final String[] messages = {
+					Messages.getString("AutoLink.Removing"), //$NON-NLS-1$
+					Messages.getString("AutoLink.Creating"), //$NON-NLS-1$
+					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
+			Frame f = getFrameInstance();
+			try {
+				BusyOperationDialog.run(f, Messages.getString("AutoLink.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) {
+							started = true;
+							dialog.setCancelable(false); // the links are changed from the first step
+							dialog.setProgress(messages[linker.getPhase()], 0, linker.getTotal());
+							dialog.endSlice();
+							return false;
+						}
+						if (linker.next())
+							return true;
+						dialog.setProgress(messages[Math.min(linker.getPhase(), messages.length - 1)], linker.getDone(), linker.getTotal());
+						if (linker.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+			} finally {
+				linker.close();
+			}
 		}
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;

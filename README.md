@@ -10,6 +10,7 @@ Phần mềm quản lý dự án trên desktop, viết bằng Java Swing, mã ng
 
 - **WBS ↔ Excel**: xuất và nhập WBS dạng file Excel; nhập WBS từ workbook ước lượng ULNL, kèm mã chức năng và bảng map mã chức năng → Lane (BE, FE, Mobile…)
 - **Original Estimate**: estimate gốc từ ULNL, tách khỏi Work; Work tự về Original Estimate khi thêm/bớt resource. Nhóm *Estimate* trên tab Task để ẩn/hiện cột, đặt Original Estimate theo Work, khôi phục Work theo Original Estimate
+- **Tự động link** (nhóm *Liên kết* trên tab Task): Giải pháp → Phát triển trong cùng dòng, Phát triển → Kiểm thử trong cùng chức năng; link tuần tự các task cùng hạng mục theo Lane, hoặc theo resource khi đã phân công. Chạy lại chỉ thay các link do chức năng này tạo, có xem trước và kiểm tra vòng lặp
 - **Cancel task** (nhóm *Status* trên tab Task và context menu): task bị gạch ngang, Work còn lại về 0 nhưng giữ link/phân công, un-cancel để khôi phục; cột lý do và ngày cancel; filter ẩn/chỉ hiện task đã cancel
 - **Lọc tên task** mà vẫn giữ các task cha (summary) để thấy ngữ cảnh
 - **Link/Unlink nhiều task** trong một transaction, có hộp thoại tiến trình; có trên context menu của bảng task
