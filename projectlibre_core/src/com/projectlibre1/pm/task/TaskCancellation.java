@@ -191,17 +191,22 @@ public class TaskCancellation {
 	 * Lets the views and the schedule know that the tasks changed: the schedule is calculated once at the end
 	 */
 	public static void refresh(Project project, Collection<NormalTask> tasks, Object source) {
-		Field workField = FieldDictionary.getInstance().getFieldFromId("Field.work"); //$NON-NLS-1$
 		int transactionId = project.fireMultipleTransaction(0, true);
 		try {
-			for (NormalTask task : tasks) {
-				task.markTaskAsNeedingRecalculation();
-				workField.fireEvent(task, source, null);
-			}
+			markChanged(tasks, source);
 		} finally {
 			project.fireMultipleTransaction(transactionId, false);
 		}
 		project.recalculate();
+	}
+
+	/** Marks the tasks to be scheduled again and lets the views know, without calculating the schedule */
+	public static void markChanged(Collection<NormalTask> tasks, Object source) {
+		Field workField = FieldDictionary.getInstance().getFieldFromId("Field.work"); //$NON-NLS-1$
+		for (NormalTask task : tasks) {
+			task.markTaskAsNeedingRecalculation();
+			workField.fireEvent(task, source, null);
+		}
 	}
 
 	private static class State {

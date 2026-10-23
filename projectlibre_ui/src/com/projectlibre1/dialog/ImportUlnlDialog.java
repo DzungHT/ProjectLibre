@@ -120,12 +120,23 @@ public final class ImportUlnlDialog extends AbstractDialog {
 	 * @return the WBS to import, or null if cancelled
 	 */
 	public static List<UlnlWbsParser.WbsItem> doDialog() {
-		ImportUlnlDialog dialog = new ImportUlnlDialog();
+		return doDialog(false);
+	}
+	/**
+	 * @param update true to update the WBS from a new version of the ULNL: the WBS is not replaced, so there is no
+	 * confirmation
+	 * @return the WBS to import, or null if cancelled
+	 */
+	public static List<UlnlWbsParser.WbsItem> doDialog(boolean update) {
+		ImportUlnlDialog dialog = new ImportUlnlDialog(update);
 		return dialog.doModal() ? dialog.result : null;
 	}
 
-	private ImportUlnlDialog() {
-		super(GraphicManager.getFrameInstance(), Messages.getString("ImportUlnlDialog.Title"), true); //$NON-NLS-1$
+	private final boolean update;
+
+	private ImportUlnlDialog(boolean update) {
+		super(GraphicManager.getFrameInstance(), Messages.getString(update ? "UlnlUpdate.Title" : "ImportUlnlDialog.Title"), true); //$NON-NLS-1$ //$NON-NLS-2$
+		this.update = update;
 		file = new JTextField(30);
 		file.setEditable(false);
 		browse = new JButton(Messages.getString("ImportUlnlDialog.Browse")); //$NON-NLS-1$
@@ -190,7 +201,7 @@ public final class ImportUlnlDialog extends AbstractDialog {
 		if (lanes == null)
 			return false;
 		UlnlWbsParser.applyLanes(result, lanes);
-		if (!Alert.okCancel(Messages.getString("ImportUlnlDialog.ConfirmReplace"))) //$NON-NLS-1$
+		if (!update && !Alert.okCancel(Messages.getString("ImportUlnlDialog.ConfirmReplace"))) //$NON-NLS-1$
 			return false;
 		return true;
 	}
