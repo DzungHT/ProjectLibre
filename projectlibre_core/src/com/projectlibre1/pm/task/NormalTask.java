@@ -1772,9 +1772,9 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	}
 
 	/**
-	 * Effort fields: the work in man-hours, man-days (8 hours) and man-months (22 man-days),
-	 * rounded down to 3 decimals. A summary has the effort of the leaf tasks below it, each unit
-	 * computed from the total hours, so its MD and MM are not sums of rounded values.
+	 * Effort fields: the work in man-hours, the original estimate in man-days (8 hours) and man-months
+	 * (22 man-days), rounded down to 3 decimals. A summary has the effort of the leaf tasks below it, each
+	 * unit computed from the total, so its MD and MM are not sums of rounded values.
 	 */
 	public static final double HOURS_PER_MAN_DAY = 8;
 	public static final double MAN_DAYS_PER_MAN_MONTH = 22;
@@ -1807,11 +1807,12 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	public boolean isReadOnlyManHours(FieldContext fieldContext) {
 		return isWbsParent() || isReadOnlyWork(fieldContext);
 	}
+	/** MD and MM are of the original estimate, not of the work: what the ULNL estimated */
 	public double getManDays() {
-		return roundEffort(getWorkHours() / HOURS_PER_MAN_DAY);
+		return roundEffort(getOriginalEstimate() / MILLIS_PER_HOUR / HOURS_PER_MAN_DAY);
 	}
 	public double getManMonths() {
-		return roundEffort(getWorkHours() / HOURS_PER_MAN_DAY / MAN_DAYS_PER_MAN_MONTH);
+		return roundEffort(getOriginalEstimate() / MILLIS_PER_HOUR / HOURS_PER_MAN_DAY / MAN_DAYS_PER_MAN_MONTH);
 	}
 
 	/**
