@@ -1524,17 +1524,19 @@ public class ProjectLibreRibbonUI extends RibbonUI {
 			int maxMinBandHeight = 0;
 			int gap = getBandGap();
 
-			// minimum is when all the tasks are collapsed
+			// minimum is when all the bands use their most restrictive
+			// resize policy. ProjectLibre bands only have the Mirror policy and
+			// never collapse, so using the collapsed width here would hide the
+			// scroll buttons while the bands overflow the window
 			RibbonTask selectedTask = ribbon.getSelectedTask();
+			int availableBandHeight = (bandScrollablePanel != null && bandScrollablePanel
+					.getHeight() > 0) ? bandScrollablePanel.getHeight() : c
+					.getHeight();
 			// System.out.println(selectedTask.getTitle() + " min width");
 			for (AbstractRibbonBand ribbonBand : selectedTask.getBands()) {
 				int bandPrefHeight = ribbonBand.getMinimumSize().height;
-				Insets bandInsets = ribbonBand.getInsets();
-				RibbonBandUI bandUI = ribbonBand.getUI();
-				int preferredCollapsedWidth = bandUI
-						.getPreferredCollapsedWidth()
-						+ bandInsets.left
-						+ bandInsets.right;
+				int preferredCollapsedWidth = getMinimumBandWidth(ribbonBand,
+						availableBandHeight);
 				width += preferredCollapsedWidth;
 				// System.out.println("\t" + ribbonBand.getTitle() + ":" +
 				// preferredCollapsedWidth);
@@ -1556,9 +1558,39 @@ public class ProjectLibreRibbonUI extends RibbonUI {
 			return new Dimension(width, maxMinBandHeight);
 		}
 
+		/**
+		 * Width of the band under its last (most restrictive) resize policy,
+		 * computed the same way as in layoutContainer.
+		 */
+		private int getMinimumBandWidth(AbstractRibbonBand<?> ribbonBand,
+				int availableBandHeight) {
+			Insets ribbonBandInsets = ribbonBand.getInsets();
+			List<RibbonBandResizePolicy> policies = ribbonBand
+					.getResizePolicies();
+			AbstractBandControlPanel controlPanel = ribbonBand
+					.getControlPanel();
+			if (controlPanel == null && ribbonBand.getPopupRibbonBand() != null) {
+				controlPanel = ribbonBand.getPopupRibbonBand()
+						.getControlPanel();
+			}
+			if (policies == null || policies.isEmpty() || controlPanel == null
+					|| availableBandHeight <= 0) {
+				return ribbonBand.getUI().getPreferredCollapsedWidth()
+						+ ribbonBandInsets.left + ribbonBandInsets.right;
+			}
+			Insets controlPanelInsets = controlPanel.getInsets();
+			int availableHeight = availableBandHeight - ribbonBandInsets.top
+					- ribbonBandInsets.bottom
+					- ribbonBand.getUI().getBandTitleHeight()
+					- controlPanelInsets.top - controlPanelInsets.bottom;
+			return policies.get(policies.size() - 1).getPreferredWidth(
+					availableHeight, controlPanel.getUI().getLayoutGap())
+					+ ribbonBandInsets.left + ribbonBandInsets.right;
+		}
+
 		/*
 		 * (non-Javadoc)
-		 * 
+		 *
 		 * @see java.awt.LayoutManager#layoutContainer(java.awt.Container)
 		 */
 		@Override
