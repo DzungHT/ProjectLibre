@@ -175,6 +175,7 @@ import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
 import com.projectlibre1.exchange.ulnl.UlnlWbsDiff;
 import com.projectlibre1.exchange.ulnl.UlnlWbsUpdater;
 import com.projectlibre1.exchange.wbsexcel.WbsExcelExporter;
+import com.projectlibre1.exchange.wbsexcel.WbsExcelImporter;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.SpreadSheetFieldArray;
 import com.projectlibre1.grouping.core.Node;
@@ -1343,8 +1344,14 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		private static final long serialVersionUID = 1L;
 		public void actionPerformed(ActionEvent arg0) {
 			setMeAsLastGraphicManager();
-			if (isDocumentActive())
-				getCurrentFrame().getProject().recalculate();
+			if (!isDocumentActive())
+				return;
+			final Project project = getCurrentFrame().getProject();
+			BusyOperationDialog.run(getFrameInstance(), Messages.getString("BusyOperation.Recalculate"), Messages.getString("Text.recalculatingSchedule"), new Runnable() { //$NON-NLS-1$ //$NON-NLS-2$
+				public void run() {
+					project.recalculate();
+				}
+			});
 		}
 	}
 
@@ -1596,16 +1603,21 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			if (result == null)
 				return;
 			Frame f = getFrameInstance();
-			Cursor cur = f.getCursor();
-			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+			final Project exported = project;
+			final ExportWbsExcelDialog.Result chosen = result;
 			try {
-				WbsExcelExporter.export(project, result.fields, result.file);
-			} catch (IOException e) {
-				f.setCursor(cur);
+				// the export only reads the project, so it runs on a worker thread while the dialog blocks the user
+				Boolean written = BusyOperationDialog.runInBackground(f, Messages.getString("ExportWbsExcelDialog.Title"), //$NON-NLS-1$
+						Messages.getString("WbsExcel.ExportingTasks"), new BusyOperationDialog.Background<Boolean>() { //$NON-NLS-1$
+					public Boolean run(BusyOperationDialog dialog) throws Exception {
+						return Boolean.valueOf(WbsExcelExporter.export(exported, chosen.fields, chosen.file, dialog));
+					}
+				});
+				if (written == null || !written.booleanValue())
+					return; // canceled
+			} catch (Exception e) {
 				Alert.error(MessageFormat.format(Messages.getString("ExportWbsExcelDialog.WriteError"), result.file.getName(), e.getMessage())); //$NON-NLS-1$
 				return;
-			} finally {
-				f.setCursor(cur);
 			}
 			JOptionPane.showMessageDialog(f, MessageFormat.format(Messages.getString("ExportWbsExcelDialog.Done"), result.file.getAbsolutePath()), //$NON-NLS-1$
 					Messages.getString("ExportWbsExcelDialog.Title"), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
@@ -1621,14 +1633,41 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			if (result == null)
 				return;
 			Frame f = getFrameInstance();
-			Cursor cur = f.getCursor();
-			f.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-			List<String> errors;
+			final WbsExcelImporter importer = result.importer;
+			importer.start(result.deleteMissing);
+			final String[] messages = {
+					Messages.getString("WbsExcel.Preparing"), //$NON-NLS-1$
+					Messages.getString("WbsExcel.Placing"), //$NON-NLS-1$
+					Messages.getString("WbsExcel.Setting"), //$NON-NLS-1$
+					Messages.getString("WbsExcel.Deleting"), //$NON-NLS-1$
+					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
 			try {
-				errors = result.importer.apply(result.deleteMissing);
+				BusyOperationDialog.run(f, Messages.getString("ImportWbsExcelDialog.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+					boolean started = false;
+					public boolean next(BusyOperationDialog dialog) {
+						if (!started) {
+							started = true;
+							dialog.setCancelable(false); // the confirmation was already given, the project changes from the first step
+							dialog.setProgress(messages[importer.getPhase()], 0, importer.getTotal());
+							dialog.endSlice();
+							return false;
+						}
+						if (importer.next())
+							return true;
+						dialog.setProgress(messages[Math.min(importer.getPhase(), messages.length - 1)], importer.getDone(), importer.getTotal());
+						if (importer.isLongStep())
+							dialog.endSlice(); // show the message before the long step
+						return false;
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+				return;
 			} finally {
-				f.setCursor(cur);
+				importer.close();
 			}
+			List<String> errors = importer.getErrors();
 			if (errors.isEmpty())
 				return;
 			StringBuilder b = new StringBuilder();
@@ -1697,9 +1736,26 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			Frame f = getFrameInstance();
 			String reasonFormat = Messages.getString("UlnlUpdate.RemovedReason"); //$NON-NLS-1$
 			String removedReason = MessageFormat.format(reasonFormat, new java.text.SimpleDateFormat("dd/MM/yyyy").format(new java.util.Date())); //$NON-NLS-1$
-			String removedPrefix = reasonFormat.substring(0, Math.max(0, reasonFormat.indexOf("{0}"))); //$NON-NLS-1$
-			UlnlWbsDiff diff = UlnlWbsDiff.compare(frame.getProject(), wbs, UlnlWbsParser.DEFAULT_ACTIVITY_CODES,
-					UlnlWbsParser.DEFAULT_ACTIVITY_NAMES, removedPrefix);
+			final String removedPrefix = reasonFormat.substring(0, Math.max(0, reasonFormat.indexOf("{0}"))); //$NON-NLS-1$
+			final Project project = frame.getProject();
+			final List<UlnlWbsParser.WbsItem> items = wbs;
+			UlnlWbsDiff diff;
+			try {
+				// the comparison only reads the project, so it runs on a worker thread
+				diff = BusyOperationDialog.runInBackground(f, Messages.getString("UlnlUpdate.Title"), Messages.getString("UlnlUpdate.Comparing"), //$NON-NLS-1$ //$NON-NLS-2$
+						new BusyOperationDialog.Background<UlnlWbsDiff>() {
+					public UlnlWbsDiff run(BusyOperationDialog dialog) {
+						return UlnlWbsDiff.compare(project, items, UlnlWbsParser.DEFAULT_ACTIVITY_CODES,
+								UlnlWbsParser.DEFAULT_ACTIVITY_NAMES, removedPrefix);
+					}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), f);
+				return;
+			}
+			if (diff == null)
+				return; // canceled
 			if (diff.isEmpty()) {
 				Alert.warn(Messages.getString("UlnlUpdate.NoChange"), f); //$NON-NLS-1$
 				return;

@@ -58,7 +58,6 @@ package com.projectlibre1.dialog;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
-import java.io.IOException;
 import java.text.DecimalFormat;
 import java.text.MessageFormat;
 import java.util.List;
@@ -250,10 +249,18 @@ public final class ImportUlnlDialog extends AbstractDialog {
 			openFile(chooser.getSelectedFile());
 	}
 
-	private void openFile(File f) {
+	private void openFile(final File f) {
 		try {
-			reader = new XlsxSheetReader(f);
-		} catch (IOException e) {
+			XlsxSheetReader read = BusyOperationDialog.runInBackground(this, getTitle(),
+					MessageFormat.format(Messages.getString("BusyOperation.Reading"), f.getName()), new BusyOperationDialog.Background<XlsxSheetReader>() { //$NON-NLS-1$
+				public XlsxSheetReader run(BusyOperationDialog dialog) throws Exception {
+					return new XlsxSheetReader(f);
+				}
+			});
+			if (read == null)
+				return; // canceled, the previous file stays
+			reader = read;
+		} catch (Exception e) {
 			reader = null;
 			rows = null;
 			Alert.error(MessageFormat.format(Messages.getString("ImportUlnlDialog.ReadError"), f.getName(), e.getMessage()), this); //$NON-NLS-1$
@@ -274,9 +281,16 @@ public final class ImportUlnlDialog extends AbstractDialog {
 	private void loadSheet() {
 		rows = null;
 		if (reader != null && sheet.getSelectedItem() != null) {
+			final XlsxSheetReader r = reader;
+			final String name = (String) sheet.getSelectedItem();
 			try {
-				rows = reader.readSheet((String) sheet.getSelectedItem());
-			} catch (IOException e) {
+				rows = BusyOperationDialog.runInBackground(this, getTitle(),
+						MessageFormat.format(Messages.getString("BusyOperation.Reading"), name), new BusyOperationDialog.Background<Map<Integer, Map<String, String>>>() { //$NON-NLS-1$
+					public Map<Integer, Map<String, String>> run(BusyOperationDialog dialog) throws Exception {
+						return r.readSheet(name);
+					}
+				});
+			} catch (Exception e) {
 				Alert.error(MessageFormat.format(Messages.getString("ImportUlnlDialog.ReadError"), file.getText(), e.getMessage()), this); //$NON-NLS-1$
 			}
 		}

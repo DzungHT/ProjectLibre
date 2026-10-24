@@ -58,7 +58,6 @@ package com.projectlibre1.dialog;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
-import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.prefs.Preferences;
 
@@ -187,11 +186,21 @@ public final class ImportWbsExcelDialog extends AbstractDialog {
 			openFile(chooser.getSelectedFile());
 	}
 
-	private void openFile(File f) {
+	private void openFile(final File f) {
 		try {
-			importer = new WbsExcelImporter(project, WbsExcelParser.parse(f));
-			file.setText(f.getAbsolutePath());
-		} catch (IOException e) {
+			// reading and comparing do not change the project, so they run on a worker thread
+			WbsExcelImporter read = BusyOperationDialog.runInBackground(this, Messages.getString("ImportWbsExcelDialog.Title"), //$NON-NLS-1$
+					MessageFormat.format(Messages.getString("BusyOperation.Reading"), f.getName()), new BusyOperationDialog.Background<WbsExcelImporter>() { //$NON-NLS-1$
+				public WbsExcelImporter run(BusyOperationDialog dialog) throws Exception {
+					WbsExcelParser.Sheet sheet = WbsExcelParser.parse(f);
+					return dialog.isCanceled() ? null : new WbsExcelImporter(project, sheet, dialog);
+				}
+			});
+			if (read != null) { // else canceled, the previous file stays
+				importer = read;
+				file.setText(f.getAbsolutePath());
+			}
+		} catch (Exception e) {
 			importer = null;
 			Alert.error(MessageFormat.format(Messages.getString("ImportUlnlDialog.ReadError"), f.getName(), e.getMessage()), this); //$NON-NLS-1$
 		}

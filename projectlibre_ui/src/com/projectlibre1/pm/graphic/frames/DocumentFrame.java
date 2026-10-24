@@ -320,23 +320,28 @@ public class DocumentFrame extends NamedFrame implements
 		return spreadSheet.getCurrentRowImpl();
 	}
 
-	boolean doBaselineDialog(boolean save) {
+	boolean doBaselineDialog(final boolean save) {
 		finishAnyOperations();
 
 		BaselineDialog baselineDialog = BaselineDialog.getInstance(getGraphicManager(),
 				null, save,hasAtLeastOneTaskSelected());
 		if (!baselineDialog.doModal())
 			return false;
-		Integer baselineNumber = new Integer(baselineDialog.getForm()
+		final Integer baselineNumber = new Integer(baselineDialog.getForm()
 				.getBaselineNumber());
-		boolean entireProject = baselineDialog.getForm().isEntireProject();
-		List selection = entireProject ? null : getSelectedImpls(true);
-		if (save)
-			getProject().saveCurrentToSnapshot(baselineNumber, entireProject,
-					selection,true);
-		else
-			getProject()
-					.clearSnapshot(baselineNumber, entireProject, selection,true);
+		final boolean entireProject = baselineDialog.getForm().isEntireProject();
+		final List selection = entireProject ? null : getSelectedImpls(true);
+		BusyOperationDialog.run(this, Messages.getString(save ? "BusyOperation.SaveBaseline" : "BusyOperation.ClearBaseline"), //$NON-NLS-1$ //$NON-NLS-2$
+				Messages.getString(save ? "BusyOperation.SavingBaseline" : "BusyOperation.ClearingBaseline"), new Runnable() { //$NON-NLS-1$ //$NON-NLS-2$
+			public void run() {
+				if (save)
+					getProject().saveCurrentToSnapshot(baselineNumber, entireProject,
+							selection,true);
+				else
+					getProject()
+							.clearSnapshot(baselineNumber, entireProject, selection,true);
+			}
+		});
 //		getProject().fireBaselineChanged(baselineDialog, null, baselineNumber,
 //				save);
 		return true;
@@ -413,12 +418,16 @@ public class DocumentFrame extends NamedFrame implements
 		UpdateProjectDialogBox dlg = UpdateProjectDialogBox.getInstance(
 				getGraphicManager().getFrame(), null,hasAtLeastOneTaskSelected());
 		if (dlg.doModal()) {
-			UpdateProjectCommand cmd = new UpdateProjectCommand(project, dlg
+			final UpdateProjectCommand cmd = new UpdateProjectCommand(project, dlg
 					.getForm().getActiveDate().getTime(), dlg.getForm()
 					.getUpdate().booleanValue(), dlg.getForm().getProgress()
 					.booleanValue());
-			forTasksDo(cmd, dlg.getForm().getEntireProject().booleanValue());
-			cmd = null;
+			final boolean entireProject = dlg.getForm().getEntireProject().booleanValue();
+			BusyOperationDialog.run(this, Messages.getString("BusyOperation.UpdateProject"), Messages.getString("BusyOperation.UpdatingTasks"), new Runnable() { //$NON-NLS-1$ //$NON-NLS-2$
+				public void run() {
+					forTasksDo(cmd, entireProject);
+				}
+			});
 		}
 
 	}
@@ -457,7 +466,7 @@ public class DocumentFrame extends NamedFrame implements
 		finishAnyOperations();
 		final List list = NodeList.nodeListToImplList(getSelectedNodes(false), NotAssignmentFilter.getInstance());
 		final int rows = list.size() - 1;
-		runDependencyBatch(Messages.getString("Text.linkingTasks"), list.size(), new DependencyBatchStep(Messages.getString("Text.creatingLinks")) {
+		runBatch(Messages.getString("Text.linkingTasks"), list.size(), new DependencyBatchStep(Messages.getString("Text.creatingLinks")) {
 			int row = 0;
 			List newDependencies = new ArrayList();
 			boolean prepare(BusyOperationDialog dialog) throws Exception {
@@ -480,7 +489,7 @@ public class DocumentFrame extends NamedFrame implements
 		finishAnyOperations();
 		List list = NodeList.nodeListToImplList(getSelectedNodes(false), NotAssignmentFilter.getInstance());
 		final List toRemove = DependencyService.getInstance().findDependenciesBetween(list);
-		runDependencyBatch(Messages.getString("Text.unlinkingTasks"), toRemove.size(), new DependencyBatchStep(Messages.getString("Text.removingLinks")) {
+		runBatch(Messages.getString("Text.unlinkingTasks"), toRemove.size(), new DependencyBatchStep(Messages.getString("Text.removingLinks")) {
 			boolean prepare(BusyOperationDialog dialog) {
 				dependencies = toRemove;
 				return true;
@@ -496,7 +505,7 @@ public class DocumentFrame extends NamedFrame implements
 	 * (fromWork true), or the work back to the original estimate. Tasks that are started are not changed by a reset.
 	 * The schedule is calculated once at the end and a single undo reverts all. Returns the number of tasks changed
 	 */
-	public int doOriginalEstimate(boolean fromWork) {
+	public int doOriginalEstimate(final boolean fromWork) {
 		finishAnyOperations();
 		List selection = getSelectedImpls(true);
 		if (selection == null)
@@ -509,42 +518,37 @@ public class DocumentFrame extends NamedFrame implements
 		}
 		Field workField = FieldDictionary.getInstance().getFieldFromId("Field.work"); //$NON-NLS-1$
 		Field estimateField = FieldDictionary.getInstance().getFieldFromId("Field.originalEstimate"); //$NON-NLS-1$
-		Field from = fromWork ? workField : estimateField;
-		Field to = fromWork ? estimateField : workField;
+		final Field from = fromWork ? workField : estimateField;
+		final Field to = fromWork ? estimateField : workField;
 		Project project = getProject();
-		UndoableEditSupport undo = project.getUndoController() == null ? null : project.getUndoController().getEditSupport();
-		int changed = 0;
-		project.beginUndoUpdate();
-		int transactionId = project.fireMultipleTransaction(0, true);
-		try {
-			for (NormalTask task : tasks) {
+		final UndoableEditSupport undo = project.getUndoController() == null ? null : project.getUndoController().getEditSupport();
+		TaskBatchStep step = new TaskBatchStep(tasks, Messages.getString(fromWork ? "OriginalEstimate.Setting" : "OriginalEstimate.Resetting")) { //$NON-NLS-1$ //$NON-NLS-2$
+			boolean change(NormalTask task) {
 				Object oldValue = to.getValue(task, null);
 				Object value;
 				if (fromWork) {
 					if (task.isCancelled() || task.isWorkOriginalEstimate(task.getWork(null))) // a cancelled task has no work
-						continue;
+						return false;
 					value = from.getValue(task, null);
 					try {
-						to.setValue(task, this, value, null);
+						to.setValue(task, DocumentFrame.this, value, null);
 					} catch (FieldParseException e) {
-						continue;
+						return false;
 					}
 				} else {
 					if (task.isReadOnlyWork(null) || !task.resetWorkToOriginalEstimate())
-						continue;
+						return false;
 					task.markTaskAsNeedingRecalculation();
-					to.fireEvent(task, this, null);
+					to.fireEvent(task, DocumentFrame.this, null);
 					value = to.getValue(task, null);
 				}
 				if (undo != null)
-					undo.postEdit(new FieldEdit(to, task, value, oldValue, this, null));
-				changed++;
+					undo.postEdit(new FieldEdit(to, task, value, oldValue, DocumentFrame.this, null));
+				return true;
 			}
-		} finally {
-			project.fireMultipleTransaction(transactionId, false);
-			project.endUndoUpdate();
-		}
-		return changed;
+		};
+		runBatch(Messages.getString("BusyOperation.OriginalEstimate"), tasks.size(), step); //$NON-NLS-1$
+		return step.changed;
 	}
 	/**
 	 * Cancels the selected tasks (and the tasks below the selected summaries), or un-cancels them, see TaskCancellation.
@@ -570,15 +574,22 @@ public class DocumentFrame extends NamedFrame implements
 		int changed = cancellation.getChangedTasks().size();
 		if (changed == 0)
 			return 0;
-		project.beginUndoUpdate();
-		try {
-			TaskCancellation.refresh(project, cancellation.getChangedTasks(), this);
-			UndoableEditSupport undo = project.getUndoController() == null ? null : project.getUndoController().getEditSupport();
-			if (undo != null)
-				undo.postEdit(cancellation.createEdit());
-		} finally {
-			project.endUndoUpdate();
-		}
+		final Project p = project;
+		final TaskCancellation c = cancellation;
+		BusyOperationDialog.run(this, Messages.getString(cancel ? "CancelTask.Cancel" : "CancelTask.Uncancel"), //$NON-NLS-1$ //$NON-NLS-2$
+				Messages.getString("Text.recalculatingSchedule"), new Runnable() { //$NON-NLS-1$
+			public void run() {
+				p.beginUndoUpdate();
+				try {
+					TaskCancellation.refresh(p, c.getChangedTasks(), DocumentFrame.this);
+					UndoableEditSupport undo = p.getUndoController() == null ? null : p.getUndoController().getEditSupport();
+					if (undo != null)
+						undo.postEdit(c.createEdit());
+				} finally {
+					p.endUndoUpdate();
+				}
+			}
+		});
 		return changed;
 	}
 
@@ -601,7 +612,7 @@ public class DocumentFrame extends NamedFrame implements
 	 * transaction, so that the schedule is calculated once at the end instead of for each dependency, and a single
 	 * undo reverts all.
 	 */
-	private abstract class DependencyBatchStep implements BusyOperationDialog.Step {
+	private abstract class DependencyBatchStep implements BatchStep {
 		protected List dependencies = null;
 		private final String applyMessage;
 		private int applied = 0;
@@ -644,7 +655,7 @@ public class DocumentFrame extends NamedFrame implements
 			return true;
 		}
 		/** End the transaction, which calculates the schedule */
-		void close() {
+		public void close() {
 			if (transactionId == 0)
 				return;
 			try {
@@ -654,13 +665,78 @@ public class DocumentFrame extends NamedFrame implements
 				getProject().endUndoUpdate();
 			}
 		}
-		void progress(BusyOperationDialog dialog, String message, int done, int total) {
-			if (dialog != null)
-				dialog.setProgress(message, done, total);
+	}
+
+	/** A step that is closed at the end of the work, or if it stops on an error */
+	private interface BatchStep extends BusyOperationDialog.Step {
+		void close();
+	}
+
+	private static void progress(BusyOperationDialog dialog, String message, int done, int total) {
+		if (dialog != null)
+			dialog.setProgress(message, done, total);
+	}
+
+	/**
+	 * Changes tasks one per step, in a single transaction so that the schedule is calculated once at the end, and a
+	 * single undo step
+	 */
+	private abstract class TaskBatchStep implements BatchStep {
+		private final Iterator<NormalTask> tasks;
+		private final int total;
+		private final String message;
+		private int done = 0;
+		private int transactionId = 0;
+		private boolean started = false;
+		private boolean recalculating = false;
+		int changed = 0;
+
+		TaskBatchStep(Collection<NormalTask> tasks, String message) {
+			this.tasks = tasks.iterator();
+			this.total = tasks.size();
+			this.message = message;
+		}
+		/** Returns true if the task was changed */
+		abstract boolean change(NormalTask task);
+
+		public boolean next(BusyOperationDialog dialog) {
+			if (!started) {
+				started = true;
+				if (dialog != null)
+					dialog.setCancelable(false);
+				getProject().beginUndoUpdate();
+				transactionId = getProject().fireMultipleTransaction(0, true);
+			}
+			if (tasks.hasNext()) {
+				if (change(tasks.next()))
+					changed++;
+				progress(dialog, message, ++done, total);
+				return false;
+			}
+			if (!recalculating) {
+				recalculating = true;
+				progress(dialog, Messages.getString("Text.recalculatingSchedule"), 0, 0); //$NON-NLS-1$
+				if (dialog != null)
+					dialog.endSlice(); // show the message before the calculation
+				return false;
+			}
+			close();
+			return true;
+		}
+		/** End the transaction, which calculates the schedule */
+		public void close() {
+			if (!started || transactionId == -1)
+				return;
+			try {
+				getProject().fireMultipleTransaction(transactionId, false);
+			} finally {
+				transactionId = -1; // closed
+				getProject().endUndoUpdate();
+			}
 		}
 	}
 
-	private void runDependencyBatch(String title, int size, DependencyBatchStep step) {
+	private void runBatch(String title, int size, BatchStep step) {
 		try {
 			if (size < BUSY_DIALOG_THRESHOLD) {
 				while (!step.next(null));

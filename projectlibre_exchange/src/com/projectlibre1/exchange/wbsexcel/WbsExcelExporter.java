@@ -67,6 +67,7 @@ import com.projectlibre1.configuration.FieldDictionary;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.grouping.core.Node;
 import com.projectlibre1.grouping.core.model.NodeModel;
+import com.projectlibre1.job.ProgressReporter;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.strings.Messages;
@@ -110,7 +111,13 @@ public class WbsExcelExporter {
 	}
 
 	public static void export(Project project, List<Field> fields, File file) throws IOException {
+		export(project, fields, file, null);
+	}
+
+	/** Reports the rows written to progress, if not null. Returns false, without writing the file, if canceled */
+	public static boolean export(Project project, List<Field> fields, File file, ProgressReporter progress) throws IOException {
 		NodeModel model = project.getTaskOutline();
+		Rows rows = new Rows(progress, countTasks(model, null));
 		int columnCount = fields.size() + 2;
 		String[] ids = new String[columnCount];
 		String[] headers = new String[columnCount];
@@ -129,17 +136,51 @@ public class WbsExcelExporter {
 		double[] widths = new double[columnCount];
 		for (int c = 0; c < columnCount; c++)
 			widths[c] = headers[c] == null ? 8 : headers[c].length();
-		writeChildren(writer, model, null, 1, fields, widths);
+		if (!writeChildren(writer, model, null, 1, fields, widths, rows))
+			return false;
 
 		for (int c = 0; c < columnCount; c++)
 			widths[c] = Math.min(MAX_WIDTH, Math.max(8, widths[c] + 2));
 		writer.setColumnWidths(widths);
 		writer.setFrozenRows(HEADER_ROW);
 		writer.setAutoFilterRow(HEADER_ROW);
+		if (progress != null)
+			progress.setProgress(Messages.getString("WbsExcel.WritingFile"), 0, 0); //$NON-NLS-1$
 		writer.write(file);
+		return true;
 	}
 
-	private static void writeChildren(XlsxSheetWriter writer, NodeModel model, Node parent, int level, List<Field> fields, double[] widths) {
+	/** Rows written, for the progress */
+	private static class Rows {
+		final ProgressReporter progress;
+		final int total;
+		int done = 0;
+		Rows(ProgressReporter progress, int total) {
+			this.progress = progress;
+			this.total = total;
+		}
+		/** Returns false if canceled */
+		boolean written() {
+			done++;
+			if (progress == null)
+				return true;
+			progress.setProgress(Messages.getString("WbsExcel.ExportingTasks"), done, total); //$NON-NLS-1$
+			return !progress.isCanceled();
+		}
+	}
+
+	private static int countTasks(NodeModel model, Node parent) {
+		int count = 0;
+		for (Iterator i = children(model, parent).iterator(); i.hasNext();) {
+			Node node = (Node) i.next();
+			if (!node.isVoid() && node.getImpl() instanceof NormalTask)
+				count += 1 + countTasks(model, node);
+		}
+		return count;
+	}
+
+	/** Returns false if canceled */
+	private static boolean writeChildren(XlsxSheetWriter writer, NodeModel model, Node parent, int level, List<Field> fields, double[] widths, Rows rows) {
 		for (Iterator i = children(model, parent).iterator(); i.hasNext();) {
 			Node node = (Node) i.next();
 			if (node.isVoid() || !(node.getImpl() instanceof NormalTask))
@@ -172,8 +213,10 @@ public class WbsExcelExporter {
 				widths[c + 2] = Math.max(widths[c + 2], text.length() + indent * 2);
 			}
 			writer.addRow(values, styles);
-			writeChildren(writer, model, node, level + 1, fields, widths);
+			if (!rows.written() || !writeChildren(writer, model, node, level + 1, fields, widths, rows))
+				return false;
 		}
+		return true;
 	}
 
 	/** Children of a node in the outline, never null (getChildren returns null for a leaf) */
