@@ -85,6 +85,7 @@ import com.jgoodies.forms.layout.FormLayout;
 import com.projectlibre1.datatype.Duration;
 import com.projectlibre1.datatype.DurationFormat;
 import com.projectlibre1.options.EditOption;
+import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.dependency.DependencyType;
@@ -138,6 +139,17 @@ public final class ValidateLinksDialog extends AbstractDialog {
 	}
 
 	public JComponent createContentPanel() {
+		if (issues.isEmpty()) { // only the verdict: the legend of the severities would make it look like a problem
+			FormLayout layout = new FormLayout("p", ""); //$NON-NLS-1$ //$NON-NLS-2$
+			DefaultFormBuilder builder = new DefaultFormBuilder(layout);
+			builder.setDefaultDialogBorder();
+			builder.append(new JLabel(MessageFormat.format(Messages.getString("ValidateLinks.AllRight"), //$NON-NLS-1$
+					String.valueOf(validator.getLinkCount()), String.valueOf(validator.getConstraintCount())), IconManager.getIcon("dialog.ok"), JLabel.LEFT)); //$NON-NLS-1$
+			if (validator.getStartedCount() > 0)
+				builder.append(new JLabel(MessageFormat.format(Messages.getString("ValidateLinks.StartedNotChecked"), //$NON-NLS-1$
+						String.valueOf(validator.getStartedCount()))));
+			return builder.getPanel();
+		}
 		FormLayout layout = new FormLayout("460dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
@@ -145,13 +157,9 @@ public final class ValidateLinksDialog extends AbstractDialog {
 				String.valueOf(validator.getLinkCount()), String.valueOf(validator.getConstraintCount()), String.valueOf(validator.getStartedCount()),
 				String.valueOf(validator.count(ScheduleValidator.ERROR)), String.valueOf(validator.count(ScheduleValidator.CONFLICT)),
 				String.valueOf(validator.count(ScheduleValidator.WARNING)));
-		if (issues.isEmpty())
-			summary += " " + Messages.getString("ValidateLinks.AllRight"); //$NON-NLS-1$ //$NON-NLS-2$
 		builder.append(new JLabel(summary));
-		if (!issues.isEmpty()) {
-			builder.append(createFilter());
-			builder.append(createTable());
-		}
+		builder.append(createFilter());
+		builder.append(createTable());
 		builder.append(new JLabel("<html><div style='width:740px'>" + Messages.getString("ValidateLinks.Help") + "</div></html>")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 		return builder.getPanel();
 	}
