@@ -55,14 +55,31 @@
  *******************************************************************************/
 package com.projectlibre1.dialog;
 
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Frame;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.text.MessageFormat;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
+import javax.swing.DefaultListCellRenderer;
+import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.KeyStroke;
+import javax.swing.ListSelectionModel;
 import javax.swing.border.Border;
 
 import com.jgoodies.forms.builder.DefaultFormBuilder;
@@ -71,6 +88,7 @@ import com.projectlibre1.help.HelpUtil;
 import com.projectlibre1.menu.MenuManager;
 import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.strings.Messages;
+import com.projectlibre1.util.Alert;
 import com.projectlibre1.util.Environment;
 
 public final class WelcomeDialog extends AbstractDialog {
@@ -80,6 +98,7 @@ public final class WelcomeDialog extends AbstractDialog {
 		boolean createProject = true;
 		boolean openProject = false;
 		boolean manageResources = false;
+		String recentFile = null;
 		public final boolean isCreateProject() {
 			return createProject;
 		}
@@ -98,6 +117,13 @@ public final class WelcomeDialog extends AbstractDialog {
 		public final void setOpenProject(boolean openProject) {
 			this.openProject = openProject;
 		}
+		/** the file chosen in the recent projects, null if a button was chosen */
+		public final String getRecentFile() {
+			return recentFile;
+		}
+		public final void setRecentFile(String recentFile) {
+			this.recentFile = recentFile;
+		}
 	}
 	private Form form;
 	private MenuManager menuManager;
@@ -107,6 +133,7 @@ public final class WelcomeDialog extends AbstractDialog {
 	JButton createProject;
 	JButton openProject;
 	JButton manageResources;
+	JList recentList;
 
 	protected boolean bind(boolean get) {
 		if (form == null)
@@ -157,7 +184,64 @@ public final class WelcomeDialog extends AbstractDialog {
 		openProject.addActionListener(buttonListener);
 		manageResources.addActionListener(buttonListener);
 		
+		initRecentList();
 		bind(true);
+	}
+
+	private void initRecentList() {
+		DefaultListModel model = new DefaultListModel();
+		for (RecentProjects.Entry entry : RecentProjects.getEntries())
+			model.addElement(entry);
+		recentList = new JList(model);
+		recentList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		recentList.setVisibleRowCount(RecentProjects.MAX);
+		recentList.setCellRenderer(new RecentRenderer());
+		recentList.addMouseListener(new MouseAdapter() {
+			public void mouseClicked(MouseEvent e) {
+				int index = recentList.locationToIndex(e.getPoint());
+				if (index >= 0 && recentList.getCellBounds(index, index).contains(e.getPoint()))
+					openRecent(index);
+			}
+		});
+		// Enter on the list opens the selected project instead of the default Create Project
+		recentList.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "openRecent"); //$NON-NLS-1$
+		recentList.getActionMap().put("openRecent", new AbstractAction() { //$NON-NLS-1$
+			private static final long serialVersionUID = 1L;
+			public void actionPerformed(ActionEvent e) {
+				if (recentList.getSelectedIndex() >= 0)
+					openRecent(recentList.getSelectedIndex());
+			}
+		});
+	}
+
+	private void openRecent(int index) {
+		RecentProjects.Entry entry = (RecentProjects.Entry) recentList.getModel().getElementAt(index);
+		if (!entry.exists()) {
+			Alert.warn(MessageFormat.format(Messages.getString("WelcomeDialog.FileNotFound"), entry.getPath()), this); //$NON-NLS-1$
+			RecentProjects.remove(entry.getPath());
+			((DefaultListModel) recentList.getModel()).remove(index);
+			return;
+		}
+		form.setRecentFile(entry.getPath());
+		onOk();
+	}
+
+	private static final class RecentRenderer extends DefaultListCellRenderer {
+		private static final long serialVersionUID = 1L;
+		public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+			RecentProjects.Entry entry = (RecentProjects.Entry) value;
+			String pathColor = isSelected ? "" : " color='#808080'"; //$NON-NLS-1$ //$NON-NLS-2$
+			String text = "<html><b>" + escape(entry.getName()) + "</b>&nbsp;&nbsp;<font" + pathColor + ">" //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				+ escape(entry.getPath()) + "</font></html>"; //$NON-NLS-1$
+			JLabel label = (JLabel) super.getListCellRendererComponent(list, text, index, isSelected, cellHasFocus);
+			label.setIcon(IconManager.getIcon("menu.open")); //$NON-NLS-1$
+			label.setBorder(BorderFactory.createEmptyBorder(3, 4, 3, 4));
+			label.setToolTipText(entry.getPath());
+			return label;
+		}
+		private static String escape(String s) {
+			return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
+		}
 	}
 
 	// Building *************************************************************
@@ -192,7 +276,28 @@ public final class WelcomeDialog extends AbstractDialog {
 			builder.append(manageResources);
 		}
 		requestFocusInWindow();
-		return builder.getPanel();
+
+		JPanel panel = new JPanel(new BorderLayout());
+		panel.add(builder.getPanel(), BorderLayout.WEST);
+		panel.add(createRecentPanel(), BorderLayout.CENTER);
+		return panel;
+	}
+
+	private JComponent createRecentPanel() {
+		JPanel panel = new JPanel(new BorderLayout(0, 8));
+		panel.setBorder(BorderFactory.createEmptyBorder(20, 0, 20, 20));
+		panel.add(new JLabel(Messages.getString("WelcomeDialog.RecentProjects")), BorderLayout.NORTH); //$NON-NLS-1$
+		if (recentList.getModel().getSize() == 0) {
+			JLabel empty = new JLabel(Messages.getString("WelcomeDialog.NoRecentProjects")); //$NON-NLS-1$
+			empty.setForeground(Color.GRAY);
+			empty.setVerticalAlignment(JLabel.TOP);
+			panel.add(empty, BorderLayout.CENTER);
+		} else {
+			JScrollPane scroll = new JScrollPane(recentList);
+			scroll.setPreferredSize(new Dimension(560, 270));
+			panel.add(scroll, BorderLayout.CENTER);
+		}
+		return panel;
 	}
 
 	/**
