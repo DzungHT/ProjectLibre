@@ -55,13 +55,24 @@
  *******************************************************************************/
 package com.projectlibre1.pm.criticalpath;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Set;
 
+import com.projectlibre1.configuration.CircularDependencyException;
+import com.projectlibre1.grouping.core.Node;
+import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.task.SubProj;
 import com.projectlibre1.pm.task.Task;
+import com.projectlibre1.util.Environment;
 
 /**
 * This class implements a task list in predecessor/parent order.  That is, the successors of any given
@@ -109,16 +120,14 @@ public class PredecessorTaskList {
 		return list.listIterator(list.size());
 	}
 
-/**
- * Helper to arrange one task
- * @param task
- */	
-	private void arrangeSingleTask(final Task task) {
-		task.arrangeTask(list,markerStatus,0);
-    	if (task.isReverseScheduled())
-			numberOfReverseScheduledTasks++;
+	/** Tasks of references, once each, in their order */
+	private static Collection tasksOf(Collection references) {
+		Set tasks = new LinkedHashSet();
+		for (Iterator i = references.iterator(); i.hasNext();)
+			tasks.add(((TaskReference) i.next()).getTask());
+		return tasks;
 	}
-	
+
 /**
  * Add a subproject. It will convert the existing task into a parent and add all children
  * @param subproject
@@ -140,13 +149,11 @@ public class PredecessorTaskList {
 
 		}
 		
-		removeTask(subproject); // remove existing one
-		arrangeSingleTask(subproject); // add it back - it will become a parent
-		// add child tasks
-		Iterator i = ((SubProj)subproject).getSubproject().getTasks().iterator();
-		while (i.hasNext())
-			arrangeSingleTask((Task)i.next());
-		
+		// all the tasks are arranged again: the subproject becomes a parent, with the tasks of the subproject
+		Collection tasks = tasksOf(list);
+		tasks.addAll(((SubProj)subproject).getSubproject().getTasks());
+		list = arrange(tasks);
+
 		// put back sentinels
 		list.addFirst(startSentinel);
 		list.addLast(endSentinel);
@@ -218,17 +225,135 @@ public class PredecessorTaskList {
 	}
 
 	boolean addAll(Collection tasks) {
-		Task task;
-		list.clear();
 		toggleMarkerStatus();
-		Iterator i = tasks.iterator();
-		while (i.hasNext()) {
-			task = (Task)i.next();
-			task.arrangeTask(list,markerStatus,0);
-	    	if (task.isReverseScheduled())
-				numberOfReverseScheduledTasks++;
-		}
+		list = arrange(tasks);
 		return true;
+	}
+
+	/** A task to arrange: a summary has a node for its begin and one for its end, another task a single node */
+	private static final class Arranged {
+		final Task task;
+		final int first; // node of the begin of a summary
+		final int last; // node of the end of a summary
+		Arranged(Task task, int first, int last) {
+			this.task = task;
+			this.first = first;
+			this.last = last;
+		}
+	}
+
+	/**
+	 * Puts tasks in predecessor/parent order: a summary begins before its children and ends after them, and a task
+	 * comes after its predecessors, after the end of a summary predecessor. The tasks they depend on that are not
+	 * given, like the children of a summary or the predecessors in another project, are added too.
+	 * It is a topological sort: a task is put once all the ones that must be before it are, and among the tasks
+	 * that can be put, the first given first, so the order stays the one of the WBS when the links allow it.
+	 * The former recursive arrangement (Task.arrangeTask) marked a task as treated before its predecessors were
+	 * put: through a predecessor in another summary, the children of this summary were put, and among them the
+	 * successors of the task, before the task. These successors were then calculated with old dates of the task.
+	 * Also counts the reverse scheduled tasks.
+	 */
+	private LinkedList arrange(Collection tasks) {
+		Map<Task, Arranged> arranged = new IdentityHashMap<Task, Arranged>();
+		List<Arranged> order = new ArrayList<Arranged>(); // in the order given, then the order found
+		int nodeCount = 0;
+		for (Iterator i = tasks.iterator(); i.hasNext();)
+			nodeCount = add((Task) i.next(), arranged, order, nodeCount);
+		for (int a = 0; a < order.size(); a++) { // tasks the given ones depend on
+			Task task = order.get(a).task;
+			if (task.getWbsParentTask() != null)
+				nodeCount = add(task.getWbsParentTask(), arranged, order, nodeCount);
+			for (Iterator i = task.getPredecessorList().iterator(); i.hasNext();) {
+				Dependency dependency = (Dependency) i.next();
+				if (!dependency.isDisabled())
+					nodeCount = add((Task) dependency.getPredecessor(), arranged, order, nodeCount);
+			}
+			Collection children = task.getWbsChildrenNodes();
+			if (children != null)
+				for (Iterator i = children.iterator(); i.hasNext();) {
+					Object child = ((Node) i.next()).getImpl();
+					if (child instanceof Task)
+						nodeCount = add((Task) child, arranged, order, nodeCount);
+				}
+		}
+
+		// edges: from a node to the ones that must be after it
+		Arranged[] taskOfNode = new Arranged[nodeCount];
+		int[][] after = new int[nodeCount][];
+		int[] afterCount = new int[nodeCount];
+		int[] waiting = new int[nodeCount]; // number of nodes still to put before a node
+		List<int[]> edges = new ArrayList<int[]>();
+		for (Arranged a : order) {
+			taskOfNode[a.first] = taskOfNode[a.last] = a;
+			if (a.first != a.last)
+				edges.add(new int[] { a.first, a.last });
+			Arranged parent = arranged.get(a.task.getWbsParentTask());
+			if (parent != null && parent.first != parent.last) {
+				edges.add(new int[] { parent.first, a.first });
+				edges.add(new int[] { a.last, parent.last });
+			}
+			for (Iterator i = a.task.getPredecessorList().iterator(); i.hasNext();) {
+				Dependency dependency = (Dependency) i.next();
+				Arranged predecessor = arranged.get(dependency.getPredecessor());
+				if (!dependency.isDisabled() && predecessor != null && predecessor != a)
+					edges.add(new int[] { predecessor.last, a.first });
+			}
+		}
+		for (int[] edge : edges) {
+			afterCount[edge[0]]++;
+			waiting[edge[1]]++;
+		}
+		for (int n = 0; n < nodeCount; n++)
+			after[n] = new int[afterCount[n]];
+		int[] filled = new int[nodeCount];
+		for (int[] edge : edges)
+			after[edge[0]][filled[edge[0]]++] = edge[1];
+
+		LinkedList result = new LinkedList();
+		numberOfReverseScheduledTasks = 0;
+		boolean[] put = new boolean[nodeCount];
+		PriorityQueue<Integer> ready = new PriorityQueue<Integer>();
+		for (int n = 0; n < nodeCount; n++)
+			if (waiting[n] == 0)
+				ready.add(n);
+		int firstNotPut = 0;
+		for (int count = 0; count < nodeCount; count++) {
+			int n;
+			if (!ready.isEmpty())
+				n = ready.poll();
+			else { // circular links: the first node not put is put anyway, so that all the tasks are calculated
+				if (Environment.isImporting())
+					throw new RuntimeException(CircularDependencyException.RUNTIME_EXCEPTION_TEXT);
+				while (put[firstNotPut])
+					firstNotPut++;
+				n = firstNotPut;
+			}
+			put[n] = true;
+			Arranged a = taskOfNode[n];
+			TaskReference reference = new TaskReference(a.task);
+			if (a.first != a.last) {
+				if (n == a.first)
+					reference.setParentBegin();
+				else
+					reference.setParentEnd();
+			}
+			result.add(reference);
+			if (n == a.first && a.task.isReverseScheduled())
+				numberOfReverseScheduledTasks++;
+			for (int next : after[n])
+				if (--waiting[next] == 0 && !put[next])
+					ready.add(next);
+		}
+		return result;
+	}
+
+	private static int add(Task task, Map<Task, Arranged> arranged, List<Arranged> order, int nodeCount) {
+		if (arranged.containsKey(task))
+			return nodeCount;
+		Arranged a = task.isWbsParent() ? new Arranged(task, nodeCount, nodeCount + 1) : new Arranged(task, nodeCount, nodeCount);
+		arranged.put(task, a);
+		order.add(a);
+		return a.last + 1;
 	}
 	
 	private void setDebugDependencyOrder() {
@@ -250,15 +375,8 @@ public class PredecessorTaskList {
 		// store off sentinels to put them back later
 		TaskReference startSentinel = (TaskReference) list.removeFirst();
 		TaskReference endSentinel = (TaskReference) list.removeLast();
-		list = new LinkedList();
-			
-		Task task;
-		Iterator i = oldList.iterator();
 		toggleMarkerStatus();
-		while (i.hasNext()) {
-			task = ((TaskReference)i.next()).getTask();
-			arrangeSingleTask(task);
-		}
+		list = arrange(tasksOf(oldList));
 		list.addFirst(startSentinel);
 		list.addLast(endSentinel);
 //		setDebugDependencyOrder();

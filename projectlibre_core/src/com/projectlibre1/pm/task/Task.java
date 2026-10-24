@@ -73,7 +73,6 @@ import org.apache.commons.collections.functors.TruePredicate;
 import com.projectlibre1.association.AssociationFormatParameters;
 import com.projectlibre1.association.AssociationList;
 import com.projectlibre1.association.AssociationListFormat;
-import com.projectlibre1.configuration.CircularDependencyException;
 import com.projectlibre1.configuration.Configuration;
 import com.projectlibre1.configuration.Settings;
 import com.projectlibre1.datatype.Duration;
@@ -587,80 +586,6 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 			return "";
 		return wbsParentTask.getName();
 	}
-
-
-	//arranges a task in predecessor/parent order in a colleciton
-	public void arrangeTask(Collection addTo, boolean markerStatus, int depth) {
-		if (this.markerStatus == markerStatus) // if task has been added, don't treat it again
-			return;
-
-		if (Environment.isImporting() && depth >= 1000) // in case circular link in imported project - TODO this is not a perfect solution
-			throw new RuntimeException(CircularDependencyException.RUNTIME_EXCEPTION_TEXT);
-		// Arrange my parent
-
-		// Arrange my predecessors
-		Iterator i = getPredecessorList().iterator();
-		Task predecessor;
-		Dependency dep;
-
-		Task parent = getWbsParentTask();
-		if (parent != null) {
-			parent.arrangeTask(addTo,markerStatus,depth+1);
-		}
-		//May 2 2008. this seems to be right place for setting marker status
-		// If it is after adding this task below, you can get into an endless loop
-		// If it is put at the top, you can get into situations where the PARENT_END is added before all children are added
-		this.markerStatus = markerStatus;
-
-		while (i.hasNext()) {
-			dep = (Dependency)i.next();
-			if (dep.isDisabled())
-				continue;
-			predecessor = (Task) dep.getPredecessor();
-			predecessor.arrangeTask(addTo,markerStatus,depth+1);
-			predecessor.arrangeChildren(addTo,markerStatus,depth);
-		}
-
-
-		// Process current task
-		PredecessorTaskList.TaskReference taskReference = new PredecessorTaskList.TaskReference(this);
-		addTo.add(taskReference);
-
-		//This was the old place for the above		this.markerStatus = markerStatus;  Move it back if bugs happen
-
-
-
-		// Arrange my children
-		if (isWbsParent()) {
-			taskReference.setParentBegin();
-			arrangeChildren(addTo,markerStatus,depth);
-			taskReference =  new PredecessorTaskList.TaskReference(this);
-			taskReference.setParentEnd();
-			addTo.add(taskReference);
-		}
-	}
-
-	private void arrangeChildren(Collection addTo, boolean markerStatus, int depth) {
-
-		//note that it is possible that this is called for non parents
-
-		Collection children = getWbsChildrenNodes(); // I depend on my predecessors children
-		if (children != null) {
-			Iterator p = children.iterator();
-			Object current;
-			Task child;
-			while (p.hasNext()) {
-				current = ((Node)p.next()).getImpl();
-				if (! (current instanceof Task))
-					continue;
-
-				child = (Task)current;
-				child.arrangeTask(addTo,markerStatus,depth+1);
-			}
-		}
-	}
-
-
 
 	/**
  * This rather complex function determines whether one task depends on another.  Because of the rules for parent tasks,
