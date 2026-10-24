@@ -57,10 +57,18 @@ import java.util.List;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 
+import javax.swing.Action;
 import javax.swing.ButtonGroup;
 import javax.swing.JComponent;
 
 import org.pushingpixels.flamingo.api.common.AbstractCommandButton;
+import org.pushingpixels.flamingo.api.common.JCommandButton;
+import org.pushingpixels.flamingo.api.common.JCommandMenuButton;
+import org.pushingpixels.flamingo.api.common.RichTooltip;
+import org.pushingpixels.flamingo.api.common.icon.ResizableIcon;
+import org.pushingpixels.flamingo.api.common.popup.JCommandPopupMenu;
+import org.pushingpixels.flamingo.api.common.popup.JPopupPanel;
+import org.pushingpixels.flamingo.api.common.popup.PopupPanelCallback;
 import org.pushingpixels.flamingo.api.ribbon.AbstractRibbonBand;
 import org.pushingpixels.flamingo.api.ribbon.JFlowRibbonBand;
 import org.pushingpixels.flamingo.api.ribbon.JRibbonBand;
@@ -72,6 +80,7 @@ import org.pushingpixels.flamingo.api.ribbon.resize.RibbonBandResizePolicy;
 
 import com.projectlibre.ui.ribbon.CustomRibbonBandGenerator;
 import com.projectlibre1.menu.ExtButtonFactory;
+import com.projectlibre1.pm.graphic.IconManager;
 
 /**
  * This class represents a tool bar factory which builds tool bars from the
@@ -85,7 +94,11 @@ import com.projectlibre1.menu.ExtButtonFactory;
  *    See ButtonFactory.java for details about the items
  *    ...
  *  '-' represents a separator
- *  
+ *
+ *    Item.popup        = SubItem1 - SubItem2   menu opened by the arrow of the button
+ *    Item.popupType    = split | popup         split: Item runs its action, the arrow opens the menu
+ *                                              popup: the whole button opens the menu
+ *
  * </pre>
  * 
  * All entries are optional.
@@ -306,6 +319,8 @@ public class RibbonFactory extends ResourceManager {
 	public AbstractCommandButton createCommandButton(String name) throws MissingResourceException,
 			ResourceFormatException, MissingListenerException {
 		AbstractCommandButton result = buttonFactory.createRibbonButton(name);
+		if (result instanceof JCommandButton)
+			addPopupMenu((JCommandButton)result, name);
 //		String type = null;
 //		try {
 //			type = getString(name + ExtButtonFactory.TYPE_SUFFIX);
@@ -333,7 +348,80 @@ public class RibbonFactory extends ResourceManager {
 		//result.setBorder(new EmptyBorder(new Insets(0, 0, 0, 0)));
 		return result;
 	}
-	
+
+	/** Items of the menu shown by the arrow of a button, e.g. RibbonLink.popup = RibbonUnlink - RibbonValidateLinks */
+	public static final String POPUP_SUFFIX=".popup";
+	/** split (default): the button runs its action, the arrow opens the menu. popup: the whole button opens the menu */
+	public static final String POPUP_TYPE_SUFFIX=".popupType";
+	public static final String POPUP_TYPE_SPLIT="split";
+	public static final String POPUP_TYPE_POPUP="popup";
+
+	/**
+	 * Turns the button into a split button or a dropdown when its .popup key lists menu items
+	 */
+	protected void addPopupMenu(JCommandButton button, String name) throws MissingResourceException, ResourceFormatException {
+		final List<String> items;
+		try {
+			@SuppressWarnings("unchecked")
+			List<String> list = (List<String>)getStringList(name+POPUP_SUFFIX);
+			items=list;
+		} catch (MissingResourceException e) {
+			return;
+		}
+		if (items.isEmpty()) return;
+
+		String type=getStringOrNull(name+POPUP_TYPE_SUFFIX);
+		button.setCommandButtonKind(POPUP_TYPE_POPUP.equals(type)
+				? JCommandButton.CommandButtonKind.POPUP_ONLY
+				: JCommandButton.CommandButtonKind.ACTION_AND_POPUP_MAIN_ACTION);
+		// built each time it opens so the items follow the current enabled state of their actions
+		button.setPopupCallback(new PopupPanelCallback() {
+			@Override
+			public JPopupPanel getPopupPanel(JCommandButton commandButton) {
+				JCommandPopupMenu menu=new JCommandPopupMenu();
+				boolean hasItems=false,separatorPending=false;
+				for (String item : items) {
+					if (item.equals(SEPARATOR)) {
+						separatorPending=true;
+						continue;
+					}
+					JCommandMenuButton menuButton=createPopupMenuButton(item);
+					if (menuButton==null) continue;
+					if (separatorPending && hasItems)
+						menu.addMenuSeparator();
+					separatorPending=false;
+					hasItems=true;
+					menu.addMenuButton(menuButton);
+				}
+				return menu;
+			}
+		});
+	}
+
+	/**
+	 * Creates an item of a button menu from the same keys as a ribbon button (.text, .icon, .action)
+	 */
+	protected JCommandMenuButton createPopupMenuButton(String name) {
+		String text=getStringOrNull(name+".text");
+		if (text==null) return null;
+		ResizableIcon icon=null;
+		String iconName=getStringOrNull(name+".icon");
+		if (iconName!=null) icon=IconManager.getRibbonIcon(iconName);
+		JCommandMenuButton result=new JCommandMenuButton(text,icon);
+		String actionName=getStringOrNull(name+".action");
+		Action action=null;
+		try {
+			if (actionName!=null) action=actions.getAction(actionName);
+		} catch (MissingListenerException e) {}
+		if (action!=null) {
+			result.addActionListener(action);
+			result.setEnabled(action.isEnabled());
+		} else result.setEnabled(false);
+		String tooltip=getStringOrNull(name+ButtonFactory.TOOLTIP_SUFFIX);
+		if (tooltip!=null) result.setActionRichTooltip(new RichTooltip(" ",tooltip));
+		return result;
+	}
+
     /**
      * Returns the boolean mapped with the given key
      * @param  key a key of the resource bundle
