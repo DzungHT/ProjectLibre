@@ -127,6 +127,7 @@ import org.apache.batik.util.gui.resource.MissingListenerException;
 import org.apache.commons.collections.Closure;
 import org.projectlibre.strings.Strings;
 import org.pushingpixels.flamingo.api.common.AbstractCommandButton;
+import org.pushingpixels.flamingo.api.common.CommandButtonDisplayState;
 import org.pushingpixels.flamingo.api.ribbon.JRibbon;
 import org.pushingpixels.flamingo.api.ribbon.JRibbonFrame;
 import org.pushingpixels.flamingo.api.ribbon.RibbonApplicationMenu;
@@ -150,7 +151,6 @@ import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
-import com.projectlibre1.dialog.EffortReportDialog;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
 import com.projectlibre1.dialog.ImportWbsExcelDialog;
 import com.projectlibre1.dialog.FindDialog;
@@ -1046,8 +1046,6 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_IMPORT_ULNL, new ImportUlnlAction());
 		actionsMap.addHandler(ACTION_EXPORT_WBS_EXCEL, new ExportWbsExcelAction());
 		actionsMap.addHandler(ACTION_IMPORT_WBS_EXCEL, new ImportWbsExcelAction());
-		actionsMap.addHandler(ACTION_EFFORT_REPORT, new EffortReportAction());
-		actionsMap.addHandler(ACTION_EFFORT_COLUMNS, new EffortColumnsAction());
 		actionsMap.addHandler(ACTION_ESTIMATE_COLUMNS, new EstimateColumnsAction());
 		actionsMap.addHandler(ACTION_SET_ORIGINAL_ESTIMATE, new SetOriginalEstimateAction());
 		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
@@ -1647,26 +1645,14 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			return isDocumentWritable();
 		}
 	}
-	public class EffortReportAction extends MenuActionsMap.DocumentMenuAction {
-		private static final long serialVersionUID = 1L;
-		public void actionPerformed(ActionEvent arg0) {
-			setMeAsLastGraphicManager();
-			if (isDocumentActive())
-				EffortReportDialog.doDialog(getCurrentFrame().getProject());
-		}
-	}
-	/** Shows the MH, MD and MM columns after the Work column of the task sheet, or hides them */
-	public class EffortColumnsAction extends ToggleColumnsAction {
-		private static final long serialVersionUID = 1L;
-		public EffortColumnsAction() {
-			super(new String[] {"Field.manHours", "Field.manDays", "Field.manMonths"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		}
-	}
-	/** Shows the original estimate and ULNL columns after the Work column of the task sheet, or hides them */
+	/**
+	 * Shows the original estimate, the MD and MM of the work and the ULNL columns after the Work column of the task sheet,
+	 * or hides them. No MH column: the work in hours repeats the original estimate
+	 */
 	public class EstimateColumnsAction extends ToggleColumnsAction {
 		private static final long serialVersionUID = 1L;
 		public EstimateColumnsAction() {
-			super(new String[] {"Field.originalEstimate", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+			super(new String[] {"Field.originalEstimate", "Field.manDays", "Field.manMonths", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
 		}
 	}
 	public class SetOriginalEstimateAction extends MenuActionsMap.DocumentMenuAction {
@@ -2796,14 +2782,24 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
     }
     
     private static final int MAX_OUTLINE_LEVEL = 10;
-    /** Ribbon combo box that shows the task sheet down to the chosen outline level */
+    /** Space on both sides of the combo boxes of a ribbon band, so they do not touch the band edges */
+    private static final int RIBBON_COMBO_PADDING = 6;
+    /**
+     * Ribbon combo box that shows the task sheet down to the chosen outline level, with the Expand and Collapse (one
+     * level) buttons below it. No label: like the filter, sort and group combos, its items say what it does, and it is
+     * laid out the same way, in the first of three rows
+     */
     private JComponent createOutlineLevelPanel() {
     	String[] levels = new String[MAX_OUTLINE_LEVEL + 1];
     	levels[0] = Messages.getString("OutlineLevel.All"); //$NON-NLS-1$
     	for (int l = 1; l <= MAX_OUTLINE_LEVEL; l++)
-    		levels[l] = String.valueOf(l);
+    		levels[l] = MessageFormat.format(Messages.getString("OutlineLevel.Level"), String.valueOf(l)); //$NON-NLS-1$
     	final JComboBox combo = new JComboBox(levels);
     	combo.setToolTipText(Messages.getString("OutlineLevel.Tooltip")); //$NON-NLS-1$
+    	Dimension size = new Dimension(120, 28); // the height of the filter combos
+    	combo.setMinimumSize(size);
+    	combo.setPreferredSize(size);
+    	combo.setMaximumSize(size);
     	combo.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				setMeAsLastGraphicManager();
@@ -2813,9 +2809,21 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 			}
 		});
     	JPanel panel = new JPanel(new GridLayout(3, 1));
-    	panel.add(new JLabel(Messages.getString("OutlineLevel.Label"))); //$NON-NLS-1$
+    	panel.setBorder(new EmptyBorder(0, RIBBON_COMBO_PADDING, 0, RIBBON_COMBO_PADDING));
+    	panel.setOpaque(false);
     	panel.add(combo);
+    	panel.add(createRibbonRowButton("RibbonExpandLevel")); //$NON-NLS-1$
+    	panel.add(createRibbonRowButton("RibbonCollapseLevel")); //$NON-NLS-1$
     	return panel;
+    }
+    /** A medium ribbon button (small icon and text) of the menu definitions, left aligned in a row of a ribbon panel */
+    private JComponent createRibbonRowButton(String name) {
+    	AbstractCommandButton button = getMenuManager().getRibbonFactory().createCommandButton(name);
+    	button.setDisplayState(CommandButtonDisplayState.MEDIUM);
+    	JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    	row.setOpaque(false);
+    	row.add(button);
+    	return row;
     }
 
     public void setRibbon(JRibbonFrame frame, MenuManager menuManger){
@@ -2824,19 +2832,21 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 		final JPanel filtersPanel=new JPanel(new GridLayout(3, 1));
 		filterToolBarManager = FilterToolBarManager.create(getMenuManager());
 		filterToolBarManager.addButtonsInRibbonBand(filtersPanel);
-		final JPanel taskFiltersPanel=new JPanel(new GridLayout(3, 1));
-		filterToolBarManager.addLinkedButtonsInRibbonBand(taskFiltersPanel);
-
     	CustomRibbonBandGenerator customBandsGenerator=new CustomRibbonBandGenerator() {
-			
+
 			@Override
 			public JComponent createRibbonComponent(String ribbonBandName) {
 				if ("FiltersRibbonBand".equals(ribbonBandName)){
 					return filtersPanel;
 				}
-				if ("TaskFiltersRibbonBand".equals(ribbonBandName))
+				if ("TaskFiltersRibbonBand".equals(ribbonBandName) || "TaskFilters".equals(ribbonBandName)) {
+					// a new panel each time: a component has only one parent
+					JPanel taskFiltersPanel=new JPanel(new GridLayout(3, 1));
+					taskFiltersPanel.setBorder(new EmptyBorder(0, RIBBON_COMBO_PADDING, 0, RIBBON_COMBO_PADDING));
+					filterToolBarManager.addLinkedButtonsInRibbonBand(taskFiltersPanel);
 					return taskFiltersPanel;
-				if ("ReportLevelRibbonBand".equals(ribbonBandName) || "TaskOutlineLevel".equals(ribbonBandName))
+				}
+				if ("TaskOutlineLevel".equals(ribbonBandName))
 					return createOutlineLevelPanel();
 				else return null;
 			}

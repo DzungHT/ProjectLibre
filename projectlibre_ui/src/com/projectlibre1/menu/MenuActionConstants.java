@@ -146,8 +146,6 @@ public interface MenuActionConstants {
 	public static final String ACTION_IMPORT_ULNL             = "ImportUlnl";
 	public static final String ACTION_EXPORT_WBS_EXCEL        = "ExportWbsExcel";
 	public static final String ACTION_IMPORT_WBS_EXCEL        = "ImportWbsExcel";
-	public static final String ACTION_EFFORT_REPORT          = "EffortReport";
-	public static final String ACTION_EFFORT_COLUMNS         = "EffortColumns";
 	public static final String ACTION_ESTIMATE_COLUMNS       = "EstimateColumns";
 	public static final String ACTION_SET_ORIGINAL_ESTIMATE  = "SetOriginalEstimate";
 	public static final String ACTION_RESET_WORK_TO_ESTIMATE = "ResetWorkToEstimate";
