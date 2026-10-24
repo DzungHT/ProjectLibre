@@ -2867,6 +2867,11 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
      * laid out the same way, in the first of three rows
      */
     private JComponent createOutlineLevelPanel() {
+    	return createOutlineLevelPanel(createRibbonRowButton("RibbonExpandLevel"), //$NON-NLS-1$
+    			createRibbonRowButton("RibbonCollapseLevel")); //$NON-NLS-1$
+    }
+    /** Outline level combo with the given two rows below it */
+    private JComponent createOutlineLevelPanel(JComponent secondRow, JComponent thirdRow) {
     	String[] levels = new String[MAX_OUTLINE_LEVEL + 1];
     	levels[0] = Messages.getString("OutlineLevel.All"); //$NON-NLS-1$
     	for (int l = 1; l <= MAX_OUTLINE_LEVEL; l++)
@@ -2889,18 +2894,93 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
     	panel.setBorder(new EmptyBorder(0, RIBBON_COMBO_PADDING, 0, RIBBON_COMBO_PADDING));
     	panel.setOpaque(false);
     	panel.add(combo);
-    	panel.add(createRibbonRowButton("RibbonExpandLevel")); //$NON-NLS-1$
-    	panel.add(createRibbonRowButton("RibbonCollapseLevel")); //$NON-NLS-1$
+    	panel.add(secondRow);
+    	panel.add(thirdRow);
     	return panel;
+    }
+    /**
+     * Three ribbon rows: each argument is a row, either one button name (a medium button with its text) or several
+     * names separated by spaces (small icon only buttons side by side)
+     */
+    private JComponent createRibbonRowsPanel(String... rows) {
+    	JPanel panel = new JPanel(new GridLayout(3, 1));
+    	panel.setBorder(new EmptyBorder(0, RIBBON_COMBO_PADDING, 0, RIBBON_COMBO_PADDING));
+    	panel.setOpaque(false);
+    	for (String row : rows)
+    		panel.add(row.indexOf(' ') < 0 ? createRibbonRowButton(row) : createRibbonIconRow(row.split(" "))); //$NON-NLS-1$
+    	return panel;
+    }
+    /** Small ribbon buttons (icon only, the text is in the tooltip) side by side in a row of a ribbon panel */
+    private JComponent createRibbonIconRow(String... names) {
+    	return createRibbonIconRow(0, names);
+    }
+    /** Same, each button centered in one of the given number of equal columns spread over the row width */
+    private JComponent createRibbonIconRow(int columns, String... names) {
+    	JPanel row = new JPanel(new RibbonRowLayout(columns));
+    	row.setOpaque(false);
+    	for (String name : names) {
+    		AbstractCommandButton button = getMenuManager().getRibbonFactory().createCommandButton(name);
+    		button.setDisplayState(CommandButtonDisplayState.SMALL);
+    		row.add(button);
+    	}
+    	return row;
     }
     /** A medium ribbon button (small icon and text) of the menu definitions, left aligned in a row of a ribbon panel */
     private JComponent createRibbonRowButton(String name) {
     	AbstractCommandButton button = getMenuManager().getRibbonFactory().createCommandButton(name);
     	button.setDisplayState(CommandButtonDisplayState.MEDIUM);
-    	JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+    	JPanel row = new JPanel(new RibbonRowLayout(0));
     	row.setOpaque(false);
     	row.add(button);
     	return row;
+    }
+    /**
+     * Lays the buttons of a ribbon row left to right, no taller than the row and centered vertically. A row is a third
+     * of the band height, a little less than the preferred height of the command buttons, which FlowLayout would cut
+     * at the bottom. With columns, the row width is split in that many equal cells and each button is centered in its
+     * cell, so that the buttons of stacked rows line up
+     */
+    private static class RibbonRowLayout implements LayoutManager {
+    	private final int columns;
+    	RibbonRowLayout(int columns) {
+    		this.columns = columns;
+    	}
+    	public void addLayoutComponent(String name, Component comp) {}
+    	public void removeLayoutComponent(Component comp) {}
+    	public Dimension preferredLayoutSize(Container parent) {
+    		int width = 0, maxWidth = 0, height = 0;
+    		for (Component c : parent.getComponents()) {
+    			Dimension d = c.getPreferredSize();
+    			width += d.width;
+    			maxWidth = Math.max(maxWidth, d.width);
+    			height = Math.max(height, d.height);
+    		}
+    		if (columns > 0)
+    			width = columns * maxWidth;
+    		Insets ins = parent.getInsets();
+    		return new Dimension(width + ins.left + ins.right, height + ins.top + ins.bottom);
+    	}
+    	public Dimension minimumLayoutSize(Container parent) {
+    		return preferredLayoutSize(parent);
+    	}
+    	public void layoutContainer(Container parent) {
+    		Insets ins = parent.getInsets();
+    		int available = parent.getHeight() - ins.top - ins.bottom;
+    		int cellWidth = columns > 0 ? (parent.getWidth() - ins.left - ins.right) / columns : 0;
+    		int x = ins.left;
+    		for (Component c : parent.getComponents()) {
+    			Dimension d = c.getPreferredSize();
+    			int h = Math.min(d.height, available);
+    			int y = ins.top + (available - h) / 2;
+    			if (columns > 0) {
+    				c.setBounds(x + Math.max(0, (cellWidth - d.width) / 2), y, Math.min(d.width, cellWidth), h);
+    				x += cellWidth;
+    			} else {
+    				c.setBounds(x, y, d.width, h);
+    				x += d.width;
+    			}
+    		}
+    	}
     }
 
     public void setRibbon(JRibbonFrame frame, MenuManager menuManger){
@@ -2925,6 +3005,13 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 				}
 				if ("TaskOutlineLevel".equals(ribbonBandName))
 					return createOutlineLevelPanel();
+				// HTD Planner: outline level combo with the outline and zoom icons below it
+				if ("PlannerOutline".equals(ribbonBandName))
+					return createOutlineLevelPanel(
+							createRibbonIconRow(4, "RibbonExpandLevel", "RibbonCollapseLevel", "RibbonZoomIn", "RibbonZoomOut"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+							createRibbonIconRow(4, "RibbonScrollToTask")); //$NON-NLS-1$
+				if ("PlannerEditRows".equals(ribbonBandName))
+					return createRibbonRowsPanel("RibbonInsert", "RibbonDelete", "RibbonIndent RibbonOutdent"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				else return null;
 			}
 		};

@@ -98,6 +98,7 @@ import com.projectlibre1.pm.graphic.IconManager;
  *    Item.popup        = SubItem1 - SubItem2   menu opened by the arrow of the button
  *    Item.popupType    = split | popup         split: Item runs its action, the arrow opens the menu
  *                                              popup: the whole button opens the menu
+ *    Band.Item.popup, Band.Item.popupType       same, only for the Item buttons of that band
  *
  * </pre>
  * 
@@ -212,7 +213,7 @@ public class RibbonFactory extends ResourceManager {
 					priority=RibbonElementPriority.LOW;
 					s=s.substring(0, s.length()-4);
 				}
-				AbstractCommandButton button =  createCommandButton(s);
+				AbstractCommandButton button =  createCommandButton(s, name);
 //				boolean visible = true;
 //				try {
 //					visible = getBoolean(s + ExtButtonFactory.VISIBLE_SUFFIX);
@@ -263,7 +264,7 @@ public class RibbonFactory extends ResourceManager {
 					priority=RibbonElementPriority.LOW;
 					s=s.substring(0, s.length()-4);
 				}
-				AbstractCommandButton button =  createCommandButton(s);
+				AbstractCommandButton button =  createCommandButton(s, name);
 //				boolean visible = true;
 //				try {
 //					visible = getBoolean(s + ExtButtonFactory.VISIBLE_SUFFIX);
@@ -318,9 +319,17 @@ public class RibbonFactory extends ResourceManager {
 	 */
 	public AbstractCommandButton createCommandButton(String name) throws MissingResourceException,
 			ResourceFormatException, MissingListenerException {
+		return createCommandButton(name, null);
+	}
+
+	/**
+	 * Creates a button of the given band, which may define its own menu for the button with Band.Item.popup
+	 */
+	public AbstractCommandButton createCommandButton(String name, String bandName) throws MissingResourceException,
+			ResourceFormatException, MissingListenerException {
 		AbstractCommandButton result = buttonFactory.createRibbonButton(name);
 		if (result instanceof JCommandButton)
-			addPopupMenu((JCommandButton)result, name);
+			addPopupMenu((JCommandButton)result, name, bandName);
 //		String type = null;
 //		try {
 //			type = getString(name + ExtButtonFactory.TYPE_SUFFIX);
@@ -357,20 +366,24 @@ public class RibbonFactory extends ResourceManager {
 	public static final String POPUP_TYPE_POPUP="popup";
 
 	/**
-	 * Turns the button into a split button or a dropdown when its .popup key lists menu items
+	 * Turns the button into a split button or a dropdown when its .popup key lists menu items.
+	 * Band.Item.popup takes precedence over Item.popup so that a button can have a menu in one band only
 	 */
-	protected void addPopupMenu(JCommandButton button, String name) throws MissingResourceException, ResourceFormatException {
+	protected void addPopupMenu(JCommandButton button, String name, String bandName) throws MissingResourceException, ResourceFormatException {
+		String key=name;
+		if (bandName!=null && getStringOrNull(bandName+"."+name+POPUP_SUFFIX)!=null)
+			key=bandName+"."+name;
 		final List<String> items;
 		try {
 			@SuppressWarnings("unchecked")
-			List<String> list = (List<String>)getStringList(name+POPUP_SUFFIX);
+			List<String> list = (List<String>)getStringList(key+POPUP_SUFFIX);
 			items=list;
 		} catch (MissingResourceException e) {
 			return;
 		}
 		if (items.isEmpty()) return;
 
-		String type=getStringOrNull(name+POPUP_TYPE_SUFFIX);
+		String type=getStringOrNull(key+POPUP_TYPE_SUFFIX);
 		button.setCommandButtonKind(POPUP_TYPE_POPUP.equals(type)
 				? JCommandButton.CommandButtonKind.POPUP_ONLY
 				: JCommandButton.CommandButtonKind.ACTION_AND_POPUP_MAIN_ACTION);
