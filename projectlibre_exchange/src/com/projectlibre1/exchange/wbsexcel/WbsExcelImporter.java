@@ -70,6 +70,7 @@ import com.projectlibre1.field.FieldParseException;
 import com.projectlibre1.grouping.core.Node;
 import com.projectlibre1.grouping.core.NodeFactory;
 import com.projectlibre1.grouping.core.model.NodeModel;
+import com.projectlibre1.job.ProgressReporter;
 import com.projectlibre1.options.TaskDefaultOption;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
@@ -82,7 +83,7 @@ import com.projectlibre1.strings.Messages;
  * Only the columns present in the file are set, and only the cells whose text differs from the
  * current value, so everything else keeps its value or what the scheduling computes.
  * The outline follows the Outline Level column when the file has it.
- * The whole import is a single undo step.
+ * The whole import is a single undo step, done in small steps by next() so that a progress dialog can repaint.
  */
 public class WbsExcelImporter {
 	/** Fields set first, in this order, as their value changes how the next ones are applied */
@@ -100,13 +101,45 @@ public class WbsExcelImporter {
 	private int updated;
 	private int moved;
 
+	public static final int PREPARING = 0;
+	public static final int PLACING = 1;
+	public static final int SETTING = 2;
+	public static final int DELETING = 3;
+	public static final int RECALCULATING = 4;
+	public static final int DONE = 5;
+
+	// state of the import done by next()
+	private boolean deleteMissing;
+	private int phase = PREPARING;
+	private int done = 0;
+	private int total = 0;
+	private boolean undoStarted = false;
+	private int transactionId = 0;
+	private final List<String> errors = new ArrayList<String>();
+	private final Map<WbsExcelParser.Row, Node> nodes = new LinkedHashMap<WbsExcelParser.Row, Node>();
+	private final Map<WbsExcelParser.Row, List<Field>> changes = new HashMap<WbsExcelParser.Row, List<Field>>();
+	private final Set<Node> created = new HashSet<Node>();
+	private Iterator<WbsExcelParser.Row> rowIterator;
+	private Iterator<Map.Entry<WbsExcelParser.Row, Node>> nodeIterator;
+	private Map<WbsExcelParser.Row, WbsExcelParser.Row> parents; // null without outline levels
+	private final Map<Node, Integer> nextPosition = new HashMap<Node, Integer>();
+	private int rootPosition = 0;
+	private Node previous = null;
+	private Set<Node> toDelete;
+	private int deleteIndex;
+
 	public WbsExcelImporter(Project project, WbsExcelParser.Sheet sheet) {
+		this(project, sheet, null);
+	}
+
+	/** Compares the file with the project, reporting the rows compared to progress if not null. Does not change the project */
+	public WbsExcelImporter(Project project, WbsExcelParser.Sheet sheet, ProgressReporter progress) {
 		this.project = project;
 		this.model = project.getTaskOutline();
 		this.sheet = sheet;
 		warnings.addAll(sheet.warnings);
 		match();
-		countChanges();
+		countChanges(progress);
 	}
 
 	public int getRowCount() {
@@ -166,11 +199,15 @@ public class WbsExcelImporter {
 		}
 	}
 
-	private void countChanges() {
+	private void countChanges(ProgressReporter progress) {
+		String message = Messages.getString("WbsExcel.Comparing"); //$NON-NLS-1$
+		int done = 0;
 		for (WbsExcelParser.Row row : sheet.rows) {
 			Node node = existing.get(row);
 			if (node != null && !changedFields(row, node).isEmpty())
 				updated++;
+			if (progress != null)
+				progress.setProgress(message, ++done, sheet.rows.size());
 		}
 		if (!sheet.hasOutlineLevel)
 			return;
@@ -270,68 +307,164 @@ public class WbsExcelImporter {
 	}
 
 	/**
+	 * Does the whole import at once.
 	 * @param deleteMissing delete the tasks that are not in the file
 	 * @return the values that could not be set, one message each
 	 */
 	public List<String> apply(boolean deleteMissing) {
-		List<String> errors = new ArrayList<String>();
-		// the cells edited in Excel are found before anything changes: once a duration is set,
-		// the finish of the file no longer matches the task but must not be applied
-		Map<WbsExcelParser.Row, Node> nodes = new LinkedHashMap<WbsExcelParser.Row, Node>();
-		Map<WbsExcelParser.Row, List<Field>> changes = new HashMap<WbsExcelParser.Row, List<Field>>();
-		Set<Node> created = new HashSet<Node>();
-		for (WbsExcelParser.Row row : sheet.rows) {
-			Node node = existing.get(row);
-			if (node == null) {
-				node = NodeFactory.getInstance().createTask(project);
-				TaskDefaultOption.getInstance().applyTo((NormalTask) node.getImpl());
-				created.add(node);
-				List<Field> fields = new ArrayList<Field>();
-				for (Field field : orderedFields())
-					if (row.values.get(field).length() > 0) // empty keeps the default of a new task
-						fields.add(field);
-				changes.put(row, fields);
-			} else {
-				changes.put(row, changedFields(row, node));
-			}
-			nodes.put(row, node);
-		}
-
-		project.beginUndoUpdate();
+		start(deleteMissing);
 		try {
-			int transactionId = project.fireMultipleTransaction(0, true);
-			try {
-				if (sheet.hasOutlineLevel)
-					placeByLevel(nodes, created);
-				else
-					insertNewTasks(nodes, created);
+			while (!next());
+		} finally {
+			close();
+		}
+		return errors;
+	}
 
-				for (Map.Entry<WbsExcelParser.Row, Node> entry : nodes.entrySet()) {
-					WbsExcelParser.Row row = entry.getKey();
-					Node node = entry.getValue();
-					for (Field field : changes.get(row)) {
-						String text = row.values.get(field);
-						try {
-							setText(field, node, text);
-						} catch (Exception e) {
-							String message = e instanceof FieldParseException ? Messages.getString("WbsExcel.InvalidValue") : e.getMessage(); //$NON-NLS-1$
-							errors.add(MessageFormat.format(Messages.getString("WbsExcel.SetError"), //$NON-NLS-1$
-									String.valueOf(row.rowNumber), field.getName(), text, message == null ? e.getClass().getSimpleName() : message));
-						}
-					}
-					((NormalTask) node.getImpl()).markTaskAsNeedingRecalculation();
-				}
+	/** Prepares the import done by next(), in small steps so that a progress dialog can repaint between them */
+	public void start(boolean deleteMissing) {
+		this.deleteMissing = deleteMissing;
+		rowIterator = sheet.rows.iterator();
+		startPhase(PREPARING, sheet.rows.size());
+	}
 
-				if (deleteMissing)
-					deleteMissing();
-			} finally {
-				project.fireMultipleTransaction(transactionId, false);
+	/** Does a small piece of the work. Returns true when the import is done */
+	public boolean next() {
+		switch (phase) {
+		case PREPARING:
+			// the cells edited in Excel are found before anything changes: once a duration is set,
+			// the finish of the file no longer matches the task but must not be applied
+			if (rowIterator.hasNext()) {
+				prepare(rowIterator.next());
+				done++;
+				return false;
+			}
+			project.beginUndoUpdate();
+			undoStarted = true;
+			transactionId = project.fireMultipleTransaction(0, true);
+			if (sheet.hasOutlineLevel)
+				parents = targetParents();
+			nodeIterator = nodes.entrySet().iterator();
+			startPhase(PLACING, nodes.size());
+			return false;
+		case PLACING:
+			if (nodeIterator.hasNext()) {
+				placeNext(nodeIterator.next());
+				done++;
+				return false;
+			}
+			nodeIterator = nodes.entrySet().iterator();
+			startPhase(SETTING, nodes.size());
+			return false;
+		case SETTING:
+			if (nodeIterator.hasNext()) {
+				setValues(nodeIterator.next());
+				done++;
+				return false;
+			}
+			if (deleteMissing) {
+				toDelete = new HashSet<Node>(missing);
+				deleteIndex = missing.size();
+				startPhase(DELETING, missing.size());
+			} else
+				startPhase(RECALCULATING, 0);
+			return false;
+		case DELETING:
+			if (deleteIndex > 0) {
+				delete(missing.get(--deleteIndex));
+				done++;
+				return false;
+			}
+			startPhase(RECALCULATING, 0);
+			return false;
+		case RECALCULATING:
+			close();
+			project.recalculate();
+			phase = DONE;
+			return true;
+		default:
+			return true;
+		}
+	}
+
+	/** Ends the transaction and the undo step. Called at the end, or if the import stops on an error */
+	public void close() {
+		try {
+			if (transactionId != 0) {
+				int id = transactionId;
+				transactionId = 0;
+				project.fireMultipleTransaction(id, false);
 			}
 		} finally {
-			project.endUndoUpdate();
+			if (undoStarted) {
+				undoStarted = false;
+				project.endUndoUpdate();
+			}
 		}
-		project.recalculate();
+	}
+
+	private void startPhase(int phase, int total) {
+		this.phase = phase;
+		this.total = total;
+		done = 0;
+	}
+
+	/** One of PREPARING, PLACING, SETTING, DELETING, RECALCULATING, DONE: what the next call to next() does */
+	public int getPhase() {
+		return phase;
+	}
+
+	/** True if the next call to next() is a single long operation */
+	public boolean isLongStep() {
+		return phase == RECALCULATING;
+	}
+
+	/** Rows or tasks processed in the current phase */
+	public int getDone() {
+		return done;
+	}
+
+	/** Rows or tasks to process in the current phase, 0 if it is a single operation */
+	public int getTotal() {
+		return total;
+	}
+
+	/** The values that could not be set, one message each */
+	public List<String> getErrors() {
 		return errors;
+	}
+
+	private void prepare(WbsExcelParser.Row row) {
+		Node node = existing.get(row);
+		if (node == null) {
+			node = NodeFactory.getInstance().createTask(project);
+			TaskDefaultOption.getInstance().applyTo((NormalTask) node.getImpl());
+			created.add(node);
+			List<Field> fields = new ArrayList<Field>();
+			for (Field field : orderedFields())
+				if (row.values.get(field).length() > 0) // empty keeps the default of a new task
+					fields.add(field);
+			changes.put(row, fields);
+		} else {
+			changes.put(row, changedFields(row, node));
+		}
+		nodes.put(row, node);
+	}
+
+	private void setValues(Map.Entry<WbsExcelParser.Row, Node> entry) {
+		WbsExcelParser.Row row = entry.getKey();
+		Node node = entry.getValue();
+		for (Field field : changes.get(row)) {
+			String text = row.values.get(field);
+			try {
+				setText(field, node, text);
+			} catch (Exception e) {
+				String message = e instanceof FieldParseException ? Messages.getString("WbsExcel.InvalidValue") : e.getMessage(); //$NON-NLS-1$
+				errors.add(MessageFormat.format(Messages.getString("WbsExcel.SetError"), //$NON-NLS-1$
+						String.valueOf(row.rowNumber), field.getName(), text, message == null ? e.getClass().getSimpleName() : message));
+			}
+		}
+		((NormalTask) node.getImpl()).markTaskAsNeedingRecalculation();
 	}
 
 	/**
@@ -366,15 +499,14 @@ public class WbsExcelImporter {
 	}
 
 	/**
-	 * Puts every row under the parent given by the outline levels, top down and in file order.
+	 * With outline levels, puts every row under the parent given by the levels, top down and in file order.
 	 * When a row is placed at index i of its parent, indexes 0 to i - 1 hold the rows placed before,
 	 * so moving it never shifts them. Tasks not in the file end up after those of the file.
+	 * Without outline levels, existing tasks stay and new ones go after the task of the previous row.
 	 */
-	private void placeByLevel(Map<WbsExcelParser.Row, Node> nodes, Set<Node> created) {
-		Map<WbsExcelParser.Row, WbsExcelParser.Row> parents = targetParents();
-		Map<Node, Integer> nextPosition = new HashMap<Node, Integer>();
-		int rootPosition = 0;
-		for (Map.Entry<WbsExcelParser.Row, Node> entry : nodes.entrySet()) {
+	private void placeNext(Map.Entry<WbsExcelParser.Row, Node> entry) {
+		Node node = entry.getValue();
+		if (parents != null) {
 			WbsExcelParser.Row parentRow = parents.get(entry.getKey());
 			Node parent = parentRow == null ? null : nodes.get(parentRow);
 			int position;
@@ -385,22 +517,15 @@ public class WbsExcelImporter {
 				position = p == null ? 0 : p.intValue();
 				nextPosition.put(parent, Integer.valueOf(position + 1));
 			}
-			Node node = entry.getValue();
 			place(node, parent, position, created.contains(node));
+			return;
 		}
-	}
-
-	/** Without outline levels: existing tasks stay, new ones go after the task of the previous row */
-	private void insertNewTasks(Map<WbsExcelParser.Row, Node> nodes, Set<Node> created) {
-		Node previous = null;
-		for (Node node : nodes.values()) {
-			if (created.contains(node)) {
-				Node parent = previous == null ? null : parentOf(previous);
-				int position = previous == null ? 0 : WbsExcelExporter.children(model, parent).indexOf(previous) + 1;
-				place(node, parent, position, true);
-			}
-			previous = node;
+		if (created.contains(node)) {
+			Node parent = previous == null ? null : parentOf(previous);
+			int position = previous == null ? 0 : WbsExcelExporter.children(model, parent).indexOf(previous) + 1;
+			place(node, parent, position, true);
 		}
+		previous = node;
 	}
 
 	private Node parentOf(Node node) {
@@ -421,21 +546,20 @@ public class WbsExcelImporter {
 		model.move(parent, list, position, NodeModel.NORMAL);
 	}
 
-	/** Bottom up, so that the tasks of the file under a deleted task are first moved up to its place */
-	private void deleteMissing() {
-		Set<Node> toDelete = new HashSet<Node>(missing);
-		for (int i = missing.size() - 1; i >= 0; i--) {
-			Node node = missing.get(i);
-			Node parent = parentOf(node);
-			List kept = new ArrayList();
-			for (Iterator j = WbsExcelExporter.children(model, node).iterator(); j.hasNext();) {
-				Node child = (Node) j.next();
-				if (!child.isVoid() && !toDelete.contains(child))
-					kept.add(child);
-			}
-			if (!kept.isEmpty())
-				model.move(parent, kept, WbsExcelExporter.children(model, parent).indexOf(node) + 1, NodeModel.NORMAL);
-			model.remove(node, NodeModel.NORMAL, true);
+	/**
+	 * Deletes a task that is not in the file. Called bottom up, so that the tasks of the file under a deleted task are
+	 * first moved up to its place
+	 */
+	private void delete(Node node) {
+		Node parent = parentOf(node);
+		List kept = new ArrayList();
+		for (Iterator j = WbsExcelExporter.children(model, node).iterator(); j.hasNext();) {
+			Node child = (Node) j.next();
+			if (!child.isVoid() && !toDelete.contains(child))
+				kept.add(child);
 		}
+		if (!kept.isEmpty())
+			model.move(parent, kept, WbsExcelExporter.children(model, parent).indexOf(node) + 1, NodeModel.NORMAL);
+		model.remove(node, NodeModel.NORMAL, true);
 	}
 }
