@@ -94,7 +94,9 @@ public class BasicScrollablePanelUI extends ScrollablePanelUI {
 		this.mouseWheelListener = new MouseWheelListener() {
 			@Override
 			public void mouseWheelMoved(MouseWheelEvent e) {
-				if (scrollablePanel.getScrollType() != JScrollablePanel.ScrollType.VERTICALLY) {
+				// horizontal panels scroll with the wheel only when they overflow
+				if (scrollablePanel.getScrollType() != JScrollablePanel.ScrollType.VERTICALLY
+						&& !isShowingScrollButtons()) {
 					return;
 				}
 
