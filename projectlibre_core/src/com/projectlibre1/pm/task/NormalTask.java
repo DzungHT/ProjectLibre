@@ -105,6 +105,7 @@ import com.projectlibre1.pm.costing.Accrual;
 import com.projectlibre1.pm.costing.EarnedValueCalculator;
 import com.projectlibre1.pm.costing.EarnedValueFields;
 import com.projectlibre1.pm.costing.EarnedValueValues;
+import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.criticalpath.TaskSchedule;
 import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.key.HasKeyImpl;
@@ -1948,6 +1949,10 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 
 	public boolean isCancelled() {
 		return cancelled;
+	}
+	/** True if the dates of the task do not follow one of its links or constraints, see ScheduleValidator */
+	public boolean isLinkIssue() {
+		return ScheduleValidator.hasIssue(this);
 	}
 	public long getCancelDate() {
 		return cancelDate;

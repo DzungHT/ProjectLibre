@@ -55,12 +55,16 @@
  *******************************************************************************/
 package com.projectlibre1.pm.criticalpath;
 
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
 import com.projectlibre1.datatype.Duration;
+import com.projectlibre1.datatype.DurationFormat;
+import com.projectlibre1.options.EditOption;
 import com.projectlibre1.options.ScheduleOption;
 import com.projectlibre1.pm.calendar.WorkCalendar;
 import com.projectlibre1.pm.dependency.Dependency;
@@ -68,6 +72,7 @@ import com.projectlibre1.pm.dependency.DependencyType;
 import com.projectlibre1.pm.scheduling.ConstraintType;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.Task;
+import com.projectlibre1.strings.Messages;
 
 /**
  * Checks that the dates of the tasks follow their links and constraints, independently of the order in which the
@@ -130,6 +135,71 @@ public class ScheduleValidator {
 		public long getLimit() {
 			return limit;
 		}
+
+		public String getSeverityText() {
+			return Messages.getString("ValidateLinks.Severity" + severity); //$NON-NLS-1$
+		}
+		/** Like Predecessor 8 (FS +2 days), Constraint SNET or Deadline */
+		public String getRuleText() {
+			switch (kind) {
+			case LINK:
+				String link = DependencyType.mapValueToString(Integer.valueOf(dependency.getDependencyType()));
+				long lag = dependency.getLag();
+				if (Duration.millis(lag) != 0)
+					link += (Duration.millis(lag) > 0 ? " +" : " ") + DurationFormat.format(lag); //$NON-NLS-1$ //$NON-NLS-2$
+				return MessageFormat.format(Messages.getString("ValidateLinks.Link"), //$NON-NLS-1$
+						String.valueOf(((Task) dependency.getPredecessor()).getId()), link);
+			case CONSTRAINT:
+				int type = task.getConstraintType();
+				return MessageFormat.format(Messages.getString("ValidateLinks.Constraint"), //$NON-NLS-1$
+						type >= 0 && type < CONSTRAINTS.length ? CONSTRAINTS[type] : String.valueOf(type));
+			default:
+				return Messages.getString("ValidateLinks.Deadline"); //$NON-NLS-1$
+			}
+		}
+		/** Like Start 10:12 02/10/2026 */
+		public String getDateText() {
+			return MessageFormat.format(Messages.getString(finish ? "ValidateLinks.Finish" : "ValidateLinks.Start"), format(date)); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		/** Like From 16:00 02/10/2026, Until for the latest date allowed */
+		public String getLimitText() {
+			return MessageFormat.format(Messages.getString(date > limit ? "ValidateLinks.NotAfter" : "ValidateLinks.NotBefore"), format(limit)); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		private static String format(long date) {
+			return EditOption.getInstance().getDateFormat().format(new Date(date));
+		}
+	}
+
+	private static final String[] CONSTRAINTS = { "ASAP", "ALAP", "MSO", "MFO", "SNET", "SNLT", "FNET", "FNLT" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$
+
+	/**
+	 * The links and constraints of a task that its dates do not follow, without the deadline that has its own
+	 * indicator. Empty for a started task. For the indicator and the filter of the task sheet
+	 */
+	public static List<Issue> check(Task task) {
+		if (task.isExternal() || task.getActualStart() != 0)
+			return Collections.emptyList();
+		List<Issue> result = null;
+		boolean hardConstraint = ScheduleOption.getInstance().isHonorRequiredDates() && isHard(task.getConstraintType());
+		for (Iterator i = task.getPredecessorList().iterator(); i.hasNext();) {
+			Dependency dependency = (Dependency) i.next();
+			if (dependency.isDisabled() || !(dependency.getPredecessor() instanceof Task))
+				continue;
+			Issue issue = checkLink(task, dependency, hardConstraint);
+			if (issue != null)
+				(result == null ? result = new ArrayList<Issue>() : result).add(issue);
+		}
+		int constraintType = task.getConstraintType();
+		if (constraintType != ConstraintType.ASAP && constraintType != ConstraintType.ALAP && task.getConstraintDate() != 0) {
+			Issue issue = checkConstraint(task, constraintType);
+			if (issue != null)
+				(result == null ? result = new ArrayList<Issue>() : result).add(issue);
+		}
+		return result == null ? Collections.<Issue> emptyList() : result;
+	}
+	/** True if the dates of the task do not follow one of its links or constraints, see check(Task) */
+	public static boolean hasIssue(Task task) {
+		return !check(task).isEmpty();
 	}
 
 	private final List<Issue> issues = new ArrayList<Issue>();

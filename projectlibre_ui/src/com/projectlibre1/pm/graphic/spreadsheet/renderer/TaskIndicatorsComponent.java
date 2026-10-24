@@ -64,6 +64,7 @@ import com.projectlibre1.configuration.Configuration;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.HasTaskIndicators;
 import com.projectlibre1.pm.availability.AvailabilityWarning;
+import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.SubProj;
 import com.projectlibre1.pm.task.Task;
@@ -86,6 +87,7 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 	protected JLabel delegated;
 	protected JLabel delegatedMe;
 	protected JLabel unavailable;
+	protected JLabel linkIssue;
 	Field constraintTypeField = Configuration.getFieldFromId("Field.constraintType"); //$NON-NLS-1$
 	Field constraintDateField = Configuration.getFieldFromId("Field.constraintDate"); //$NON-NLS-1$
 	Field deadlineField = Configuration.getFieldFromId("Field.deadline"); //$NON-NLS-1$
@@ -125,6 +127,8 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 		delegatedMe.setOpaque(false);
 		unavailable = new JLabel(" ",IconManager.getIcon("indicator.availability"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
 		unavailable.setOpaque(false);
+		linkIssue = new JLabel(" ",IconManager.getIcon("indicator.linkIssue"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
+		linkIssue.setOpaque(false);
 	}
 	
 	
@@ -168,6 +172,18 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 				text.append(Messages.getString("AvailabilityWarning.Header")); //$NON-NLS-1$
 				for (String period : periods)
 					text.append("<br>- ").append(period); //$NON-NLS-1$
+				text.append("<br>"); //$NON-NLS-1$
+			}
+		}
+		if (indicators instanceof Task) { // links and constraints the dates do not follow, see ScheduleValidator
+			List<ScheduleValidator.Issue> issues = ScheduleValidator.check((Task)indicators);
+			if (!issues.isEmpty()) {
+				setLook(linkIssue,isSelected,hasFocus);
+				label.add(linkIssue);
+				text.append(Messages.getString("ValidateLinks.Indicator")); //$NON-NLS-1$
+				for (ScheduleValidator.Issue issue : issues)
+					text.append("<br>- ").append(issue.getSeverityText()).append(": ").append(issue.getRuleText()) //$NON-NLS-1$ //$NON-NLS-2$
+						.append(", ").append(issue.getDateText()).append(", ").append(issue.getLimitText()); //$NON-NLS-1$ //$NON-NLS-2$
 				text.append("<br>"); //$NON-NLS-1$
 			}
 		}

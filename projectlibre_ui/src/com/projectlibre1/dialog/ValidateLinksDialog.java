@@ -61,9 +61,7 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.text.DateFormat;
 import java.text.MessageFormat;
-import java.util.Date;
 import java.util.List;
 
 import javax.swing.JComboBox;
@@ -82,13 +80,8 @@ import javax.swing.table.TableRowSorter;
 
 import com.jgoodies.forms.builder.DefaultFormBuilder;
 import com.jgoodies.forms.layout.FormLayout;
-import com.projectlibre1.datatype.Duration;
-import com.projectlibre1.datatype.DurationFormat;
-import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.pm.criticalpath.ScheduleValidator;
-import com.projectlibre1.pm.dependency.Dependency;
-import com.projectlibre1.pm.dependency.DependencyType;
 import com.projectlibre1.pm.graphic.frames.DocumentFrame;
 import com.projectlibre1.pm.graphic.frames.GraphicManager;
 import com.projectlibre1.pm.graphic.spreadsheet.SpreadSheet;
@@ -107,13 +100,11 @@ public final class ValidateLinksDialog extends AbstractDialog {
 			new Color(0xFBE3E3), // error
 			new Color(0xFFE0B2), // conflict
 			new Color(0xFFF4CC) }; // warning
-	private static final String[] CONSTRAINTS = { "ASAP", "ALAP", "MSO", "MFO", "SNET", "SNLT", "FNET", "FNLT" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$
 	private static ValidateLinksDialog shown = null;
 
 	private final DocumentFrame frame;
 	private final ScheduleValidator validator;
 	private final List<ScheduleValidator.Issue> issues;
-	private final DateFormat dateFormat = EditOption.getInstance().getDateFormat();
 	private JTable table;
 	private TableRowSorter<IssueModel> sorter;
 
@@ -230,31 +221,6 @@ public final class ValidateLinksDialog extends AbstractDialog {
 		return path.toString();
 	}
 
-	private static String rule(ScheduleValidator.Issue issue) {
-		switch (issue.getKind()) {
-		case ScheduleValidator.LINK:
-			Dependency dependency = issue.getDependency();
-			String link = DependencyType.mapValueToString(Integer.valueOf(dependency.getDependencyType()));
-			if (Duration.millis(dependency.getLag()) != 0)
-				link += (Duration.millis(dependency.getLag()) > 0 ? " +" : " ") + DurationFormat.format(dependency.getLag()); //$NON-NLS-1$ //$NON-NLS-2$
-			return MessageFormat.format(Messages.getString("ValidateLinks.Link"), //$NON-NLS-1$
-					String.valueOf(((Task) dependency.getPredecessor()).getId()), link);
-		case ScheduleValidator.CONSTRAINT:
-			int type = issue.getTask().getConstraintType();
-			return MessageFormat.format(Messages.getString("ValidateLinks.Constraint"), //$NON-NLS-1$
-					type >= 0 && type < CONSTRAINTS.length ? CONSTRAINTS[type] : String.valueOf(type));
-		default:
-			return Messages.getString("ValidateLinks.Deadline"); //$NON-NLS-1$
-		}
-	}
-
-	/** The limit is the latest date for SNLT, FNLT and deadlines, and when the date is after it */
-	private String limit(ScheduleValidator.Issue issue) {
-		boolean notAfter = issue.getDate() > issue.getLimit();
-		return MessageFormat.format(Messages.getString(notAfter ? "ValidateLinks.NotAfter" : "ValidateLinks.NotBefore"), //$NON-NLS-1$ //$NON-NLS-2$
-				dateFormat.format(new Date(issue.getLimit())));
-	}
-
 	private class IssueModel extends AbstractTableModel {
 		private static final long serialVersionUID = 1L;
 		private final String[] header = { Messages.getString("ValidateLinks.Severity"), Messages.getString("ValidateLinks.Id"), //$NON-NLS-1$ //$NON-NLS-2$
@@ -275,15 +241,14 @@ public final class ValidateLinksDialog extends AbstractDialog {
 		public Object getValueAt(int row, int column) {
 			ScheduleValidator.Issue issue = issues.get(row);
 			switch (column) {
-			case SEVERITY: return severityName(issue.getSeverity());
+			case SEVERITY: return issue.getSeverityText();
 			case ID: return Long.valueOf(issue.getTask().getId());
 			case TASK: // the name and the one of the parent, the whole path as tooltip
 				Task parent = issue.getTask().getWbsParentTask();
 				return parent == null ? issue.getTask().getName() : parent.getName() + " > " + issue.getTask().getName(); //$NON-NLS-1$
-			case RULE: return rule(issue);
-			case DATE: return MessageFormat.format(Messages.getString(issue.isFinish() ? "ValidateLinks.Finish" : "ValidateLinks.Start"), //$NON-NLS-1$ //$NON-NLS-2$
-					dateFormat.format(new Date(issue.getDate())));
-			default: return limit(issue);
+			case RULE: return issue.getRuleText();
+			case DATE: return issue.getDateText();
+			default: return issue.getLimitText();
 			}
 		}
 	}
