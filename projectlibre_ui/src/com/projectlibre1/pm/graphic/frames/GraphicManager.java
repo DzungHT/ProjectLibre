@@ -1842,6 +1842,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			messages[AutoScheduleJob.LINKING] = Messages.getString("AutoSchedule.Linking"); //$NON-NLS-1$
 			messages[AutoScheduleJob.SCHEDULING] = Messages.getString("AutoSchedule.Scheduling"); //$NON-NLS-1$
 			messages[AutoScheduleJob.ASSIGNING] = Messages.getString("AutoSchedule.Assigning"); //$NON-NLS-1$
+			messages[AutoScheduleJob.SEQUENCING] = Messages.getString("AutoSchedule.Sequencing"); //$NON-NLS-1$
 			messages[AutoScheduleJob.RECALCULATING] = Messages.getString("Text.recalculatingSchedule"); //$NON-NLS-1$
 			messages[AutoScheduleJob.CHECKING] = Messages.getString("AutoSchedule.Checking"); //$NON-NLS-1$
 			Frame f = getFrameInstance();

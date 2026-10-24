@@ -73,6 +73,7 @@ public class AutoScheduleOptions {
 	private final Map<String, String> roles = new LinkedHashMap<String, String>();
 	private long start = 0;
 	private boolean keepAssignments = true;
+	private boolean criticalFirst = false;
 
 	/** @param linkOptions the activities and the activities with a required skill, as for Auto Link */
 	public AutoScheduleOptions(AutoLinkOptions linkOptions) {
@@ -116,5 +117,12 @@ public class AutoScheduleOptions {
 	}
 	public void setKeepAssignments(boolean keepAssignments) {
 		this.keepAssignments = keepAssignments;
+	}
+	/** True to give the resources to the critical tasks first, false (default) in the order of the WBS */
+	public boolean isCriticalFirst() {
+		return criticalFirst;
+	}
+	public void setCriticalFirst(boolean criticalFirst) {
+		this.criticalFirst = criticalFirst;
 	}
 }

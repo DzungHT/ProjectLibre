@@ -120,6 +120,7 @@ public class AutoScheduleModel {
 	public void schedule() throws AutoScheduler.CircularLinksException {
 		long projectStart = project.getStartConstraint();
 		scheduler = new AutoScheduler(time, projectStart, options.getStart() == 0 ? projectStart : options.getStart());
+		scheduler.setCriticalFirst(options.isCriticalFirst());
 		scheduler.schedule(tasks, resources);
 	}
 
@@ -193,6 +194,8 @@ public class AutoScheduleModel {
 		String activity = options.activityOf(task);
 		String role = options.getRole(activity);
 		long work = Duration.millis(task.getWork(null));
+		if (task.isEffortDriven() && task.isWorkOriginalEstimate(work))
+			work = task.getOriginalEstimate(); // what the work becomes when the task is assigned again
 		long duration = Math.max(0, Duration.millis(task.getDuration()));
 		AutoTask node;
 		if (task.getActualStart() != 0 || task.isComplete()) {
@@ -256,8 +259,13 @@ public class AutoScheduleModel {
 		return false;
 	}
 
-	/** Date of a constraint Start No Earlier Than or Must Start On, 0 if none */
+	/**
+	 * Date of a constraint Start No Earlier Than or Must Start On, 0 if none. A constraint set by a previous Auto
+	 * Schedule is not one: it is calculated again
+	 */
 	private static long earliestStart(NormalTask task) {
+		if (AutoScheduleJob.hasOwnConstraint(task))
+			return 0;
 		int type = task.getConstraintType();
 		return type == ConstraintType.SNET || type == ConstraintType.MSO ? task.getConstraintDate() : 0;
 	}

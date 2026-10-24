@@ -70,9 +70,9 @@ import com.projectlibre1.pm.dependency.DependencyType;
 /**
  * Assigns the tasks to the resources and schedules them (list scheduling), see docs/auto-schedule-design.md:
  * <ol>
- * <li>Critical path without the limits of the resources, the work of the tasks done at the standard level of
- * their role: latest start of each task</li>
- * <li>The tasks whose predecessors are scheduled wait in a queue, by latest start</li>
+ * <li>The tasks whose predecessors are scheduled wait in a queue, in the order of the WBS: the functions are done
+ * one after the other. Or, as an option, by latest start: critical path without the limits of the resources, the
+ * work of the tasks done at the standard level of their role (the short functions are then spread out)</li>
  * <li>For the first task of the queue, each resource of its role having its required skill gives the earliest
  * end it can reach: in a period of its availability with Max Units over 0%, when it is free (between its tasks
  * if there is room), lasting work / Max Units. The earliest end is chosen; for the same end, the resource with
@@ -99,10 +99,15 @@ public class AutoScheduler {
 		}
 	}
 
-	private static final Comparator<AutoTask> PRIORITY = new Comparator<AutoTask>() {
+	private static final Comparator<AutoTask> CRITICAL_FIRST = new Comparator<AutoTask>() {
 		public int compare(AutoTask a, AutoTask b) {
 			if (a.latestStart != b.latestStart)
 				return a.latestStart < b.latestStart ? -1 : 1;
+			return a.order - b.order;
+		}
+	};
+	private static final Comparator<AutoTask> WBS_ORDER = new Comparator<AutoTask>() {
+		public int compare(AutoTask a, AutoTask b) {
 			return a.order - b.order;
 		}
 	};
@@ -110,6 +115,7 @@ public class AutoScheduler {
 	private final WorkingTime time;
 	private final long projectStart;
 	private final long earliest;
+	private boolean criticalFirst = false;
 	private long end = 0;
 
 	/**
@@ -121,6 +127,11 @@ public class AutoScheduler {
 		this.time = time;
 		this.projectStart = projectStart;
 		this.earliest = Math.max(earliest, projectStart);
+	}
+
+	/** True to take the tasks by latest start (critical first), false (default) in the order of the WBS */
+	public void setCriticalFirst(boolean criticalFirst) {
+		this.criticalFirst = criticalFirst;
 	}
 
 	/**
@@ -153,7 +164,7 @@ public class AutoScheduler {
 				for (AutoResource resource : task.keptResources)
 					resource.occupy(task.fixedStart, task.fixedEnd);
 
-		PriorityQueue<AutoTask> queue = new PriorityQueue<AutoTask>(Math.max(1, tasks.size()), PRIORITY);
+		PriorityQueue<AutoTask> queue = new PriorityQueue<AutoTask>(Math.max(1, tasks.size()), criticalFirst ? CRITICAL_FIRST : WBS_ORDER);
 		Deque<AutoTask> immediate = new ArrayDeque<AutoTask>(); // tasks without choice of resource
 		for (AutoTask task : tasks) {
 			task.waiting = task.predecessors.size();
@@ -367,7 +378,7 @@ public class AutoScheduler {
 		task.status = AutoTask.SCHEDULED;
 		task.resource = best;
 		task.units = bestSlot.units;
-		task.begin = beginForEnd(begin, minEnd, Math.round(task.work / bestSlot.units), best.getTime());
+		task.begin = beginForEnd(begin, minEnd, AutoResource.durationOf(task.work, bestSlot.units), best.getTime());
 		task.start = bestSlot.start;
 		task.end = bestSlot.end;
 		best.occupy(task.start, task.end);

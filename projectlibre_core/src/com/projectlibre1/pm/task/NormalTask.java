@@ -1947,6 +1947,18 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	public String getAutoScheduleSkill() {
 		return autoScheduleSkill;
 	}
+	/**
+	 * Date of the constraint Start No Earlier Than set by Auto Schedule (a resource available only from then),
+	 * 0 if none. Auto Schedule replaces it when run again; a constraint changed by the user is kept
+	 */
+	private long autoScheduleStart = 0;
+
+	public long getAutoScheduleStart() {
+		return autoScheduleStart;
+	}
+	public void setAutoScheduleStart(long autoScheduleStart) {
+		this.autoScheduleStart = autoScheduleStart;
+	}
 	/** Role and required skill (null if none) without resource, null role when Auto Schedule found one */
 	public void setAutoScheduleMissing(String role, String skill) {
 		this.autoScheduleRole = emptyToNull(role);
@@ -2327,6 +2339,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			n.lane = lane;
 			n.autoScheduleRole = autoScheduleRole;
 			n.autoScheduleSkill = autoScheduleSkill;
+			n.autoScheduleStart = autoScheduleStart;
 			n.cancelled = cancelled;
 			n.cancelDate = cancelDate;
 			n.cancelReason = cancelReason;

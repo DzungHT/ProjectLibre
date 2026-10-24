@@ -182,7 +182,7 @@ Phân loại task lá:
 |---|---|---|
 | Xếp lịch | Có hoạt động ánh xạ ra role, không huỷ, có work, chưa bắt đầu | Chọn resource, tính ngày |
 | Giữ ngày | Đã bắt đầu (Actual Start) hoặc đã xong | Giữ ngày; resource được giao bận trong khoảng đó |
-| Bị động | Còn lại (PM/QA, huỷ, không work, mốc...) | Giữ thời lượng và Leveling Delay, chạy theo link |
+| Bị động | Còn lại (PM/QA, huỷ, không work, mốc...) | Giữ thời lượng, ràng buộc và Leveling Delay người dùng đặt, chạy theo link |
 
 Ràng buộc Start No Earlier Than / Must Start On của task được tôn trọng (ngày sớm nhất).
 
@@ -191,13 +191,18 @@ Ràng buộc Start No Earlier Than / Must Start On của task được tôn tr�
 
 **Thuật toán (list scheduling):**
 
-1. CPM không giới hạn nguồn lực, thời lượng tính theo level chuẩn của role → LS (latest start) của mỗi task.
-2. Hàng đợi ưu tiên các task đã đủ điều kiện (mọi task trước đã xếp), sắp theo LS tăng dần.
-3. Lấy task, với mỗi resource hợp lệ (đúng role, có skill, trong khoảng tham gia):
+1. Hàng đợi các task đã đủ điều kiện (mọi task trước đã xếp), sắp theo **thứ tự WBS**: chức năng đầu WBS được giao
+   người trước, mỗi chức năng làm liền GP → PT → KT.
+2. Lấy task, với mỗi resource hợp lệ (đúng role, có skill, trong khoảng tham gia):
    `bắt đầu = max(ngày sẵn sàng của task, ngày rảnh của resource)`, `kết thúc = bắt đầu + Work / Max Units`.
-   Chọn resource có **ngày kết thúc sớm nhất** (tự ưu tiên người point cao cho task găng).
+   Chọn resource có **ngày kết thúc sớm nhất** (tự ưu tiên người point cao).
    Bằng nhau thì ưu tiên người ít skill hơn, để dành người Fullstack cho chỗ thiếu.
-4. Cập nhật ngày rảnh của resource, đưa các task sau đã đủ điều kiện vào hàng đợi.
+3. Cập nhật ngày rảnh của resource, đưa các task sau đã đủ điều kiện vào hàng đợi.
+
+Ban đầu (bản đầu của P2) hàng đợi sắp theo LS của CPM không giới hạn nguồn lực (task găng trước). Thử trên WBS thật
+(DTMS, 3561 task, 1 dev BE, 1 dev FE) thì các chức năng ngắn bị coi là không gấp và bị xếp xen kẽ: chức năng 2,4 MD
+"Bộ lọc thời gian" có GP 3/2027, PT 1/2028, KT 3/2028. Đã đổi sang thứ tự WBS (chốt với anh Dũng); thứ tự theo LS vẫn còn
+là tuỳ chọn `AutoScheduleOptions.setCriticalFirst()` (chưa có trên giao diện).
 
 O(n log n × số resource mỗi role). Tính theo ngày làm việc của lịch dự án (link, task không người) và lịch của
 resource (thời lượng).
@@ -205,34 +210,49 @@ resource (thời lượng).
 Chi tiết đã làm:
 
 - "Ngày rảnh" của resource là danh sách khoảng bận đã gộp: task được chèn vào khoảng trống giữa các task trước của
-  resource nếu đủ chỗ, vì thứ tự xếp theo LS chứ không theo thời gian.
+  resource nếu đủ chỗ, vì thứ tự xếp theo WBS chứ không theo thời gian.
+- Work dùng để tính là Work sau khi giao người: task effort driven có Work bằng Original Estimate thì lấy đúng Original
+  Estimate (ProjectLibre đưa Work về Original Estimate khi thêm/bớt resource). Thời lượng cắt tới mili-giây như
+  ProjectLibre; lệch vài mili-giây có thể đẩy task sau qua giờ nghỉ trưa / sang ngày hôm sau.
 - Trong khoảng tham gia: task bắt đầu trong khoảng Max Units > 0, units = Max Units của khoảng chứa ngày bắt đầu, và
   không được chạy qua khoảng 0% (ví dụ nghỉ giữa dự án); nếu chạy qua thì bắt đầu ở khoảng có units tiếp theo.
 - Không resource nào hợp lệ (thiếu role/kỹ năng, hoặc không còn khoảng available): task giữ thời lượng, bắt đầu khi đủ
   điều kiện, cột Indicators có icon cảnh báo (tooltip ghi role và kỹ năng thiếu). Icon mất khi task được giao resource
   đúng role và kỹ năng, hoặc khi chạy lại tìm được người.
-- Thử với 3000 task, 16 resource: khoảng 1,2 giây cả Auto Link, xếp lịch, ghi và tính lại lịch.
+- Thử với 3000 task, 16 resource: khoảng 1 giây cả Auto Link, xếp lịch, ghi và tính lại lịch. WBS DTMS (5450 dòng,
+  3561 task được xếp): khoảng 1,1 giây.
 
 **Task đã giao sẵn:** tuỳ chọn *giữ phân công hiện có* (chỉ tính lại ngày) hoặc *giao lại tất cả*. Giữ phân công: task
 giữ resource và thời lượng hiện có, bắt đầu khi mọi resource của nó available và rảnh.
 
-**Ghi kết quả vào dự án:** tạo assignment với units = Max Units và đẩy task tới ngày bắt đầu đã tính.
-Đã thử ở P2 (task A 40h → B 40h, DEV L4, đẩy B 5 ngày công):
+**Ghi kết quả vào dự án:** tạo assignment với units = Max Units. Thứ tự công việc của mỗi resource được ghi bằng
+**link FS nối các task của cùng một người** theo thứ tự ngày bắt đầu đã tính (link của Auto Link, `isAuto()`; chạy lại
+Auto Schedule hoặc Auto Link thì được xoá và tạo lại). Mọi task as soon as possible, Leveling Delay = 0: nhìn link là
+biết task chờ task nào, muốn đổi thứ tự thì sửa link.
+
+- Task đã bắt đầu có thể là task trước của link, không là task sau.
+- Resource chưa available (Max Units 0%, ví dụ trước ngày vào dự án) trong thời gian task chạy: task được đặt ràng buộc
+  Start No Earlier Than ngày đã tính. Auto Schedule ghi nhớ ràng buộc mình đặt (`NormalTask.autoScheduleStart`); chạy
+  lại thì tính lại ràng buộc đó, ràng buộc người dùng đã sửa thì giữ.
+- Sau khi ghi, ProjectLibre tính lại lịch; task bắt đầu muộn hơn ngày đã tính được đếm để kiểm tra (DTMS: 0).
+
+Các cách đã thử và bỏ:
 
 | Cách | Kết quả |
 |---|---|
-| `levelingDelay` của assignment | **Không dùng được**: task vẫn bắt đầu theo link (cột Start sai), chỉ assignment bị lùi, Gantt có khoảng trống |
-| **`levelingDelay` của task** (field *Leveling Delay* có sẵn) | **Đã chọn**: CPM cộng vào ngày bắt đầu (`TaskSchedule`), lưu trong file, có cột Leveling Delay, xuất được MPX, không đụng ràng buộc của người dùng, xoá bằng cách đặt về 0 |
-| Ràng buộc Start No Earlier Than | Đúng ngày nhưng ghi đè ràng buộc người dùng đặt |
-
-Leveling Delay là độ trễ tương đối (giờ làm việc tính từ ngày link cho phép): task trước bị lùi thì task sau lùi theo,
-chạy lại Auto Schedule để tính lại. Sau khi ghi, ProjectLibre tính lại lịch và Auto Schedule so ngày bắt đầu từng task với
-ngày đã tính; lệch (do làm tròn, lịch riêng của resource) thì sửa Leveling Delay, tối đa 5 lần.
+| `levelingDelay` của assignment | Task vẫn bắt đầu theo link (cột Start sai), chỉ assignment bị lùi |
+| `levelingDelay` của task | Đúng ngày, nhưng con số delay (ví dụ 1825 giờ) không cho biết task chờ ai, khó kiểm tra và sửa; anh Dũng không đồng ý tự động gán delay |
+| Start No Earlier Than cho mọi task | Ghi đè ràng buộc người dùng, cũng không cho biết lý do |
 
 Task Fixed Work giữ nguyên Work: ProjectLibre làm tròn thời lượng tới mili-giây nên Work có thể lệch dưới 1 giây
 (80 giờ → 79,99997 giờ, như khi tự giao resource có units 159%).
 
-Cả thao tác ghi (link, assignment, Leveling Delay, cảnh báo) là một lần Undo.
+Cả thao tác ghi (link, assignment, ràng buộc, cảnh báo) là một lần Undo.
+
+**Kết quả trên WBS DTMS** (1 dev BE, 1 dev FE, 3 BA, 2 tester TBD, bắt đầu 01/10/26): xong 28/02/28 (bản theo LS và
+Leveling Delay: 06/06/28). Giới hạn dưới do dev BE: 737 MD / 203% ≈ 363 ngày công. Các chức năng đầu WBS làm liền trong
+1–3 ngày; các chức năng cuối WBS vẫn trải dài (median 133 ngày) vì BA làm xong mọi GP trước 3/2027 còn PT phải xếp hàng
+chờ 1 dev mỗi kỹ năng đến 2028.
 
 **Giao diện tạm (P2):** nút *Tự động xếp lịch* (nhóm *Lập lịch* trên tab HTD - VTIT), hộp thoại chọn ngày bắt đầu
 (mặc định ngày bắt đầu dự án; không sớm hơn ngày đó) và giữ/giao lại phân công, xem trước số task và số resource có role.
@@ -288,7 +308,7 @@ Chạy trong `JobProgressDialog` như import ULNL. Lưu các lựa chọn bằng
 | Giai đoạn | Nội dung | Kết quả |
 |---|---|---|
 | P1 (đã làm) | Labor Category (import CSV, quy đổi effort), danh mục kỹ năng, đổi Lane → Kỹ năng yêu cầu, field resource (role, level, kỹ năng; TBD dùng cờ Generic có sẵn) | Gán resource có role/level/kỹ năng và tính đúng work |
-| P2 (đã làm) | Engine + ghi vào dự án (Leveling Delay của task), Auto Link không chuỗi, hộp thoại tạm | Loại 2 chạy được (tạm thời chưa có wizard đầy đủ) |
+| P2 (đã làm) | Engine (thứ tự WBS) + ghi vào dự án (link FS theo resource, SNET khi resource chưa available), Auto Link không chuỗi, hộp thoại tạm | Loại 2 chạy được (tạm thời chưa có wizard đầy đủ) |
 | P3 | Tính nguồn lực theo deadline | Loại 1, 3 |
 | P4 | Wizard | Giao diện hoàn chỉnh |
 | P5 | Báo cáo Excel | Báo cáo nguồn lực |

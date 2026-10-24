@@ -151,7 +151,7 @@ public class AutoResource {
 			if (periodUnits[period] <= 0)
 				continue; // the working time starts in a period of 0%
 			double units = periodUnits[period];
-			long length = duration >= 0 ? duration : Math.round(work / units);
+			long length = duration >= 0 ? duration : durationOf(work, units);
 			long end = time.add(start, length, true);
 			if (end < minEnd) {
 				start = time.add(start, time.between(minEnd, end), false);
@@ -175,6 +175,14 @@ public class AutoResource {
 			return new Slot(start, end, units);
 		}
 		return null;
+	}
+
+	/**
+	 * Duration of a work at these units, truncated to the millisecond as ProjectLibre does: rounded up, a task
+	 * would end at 12:00 instead of 11:59:59.999 and the next one would start after the lunch break
+	 */
+	static long durationOf(long work, double units) {
+		return (long) (work / units);
 	}
 
 	/** End of a busy time overlapping [start, end), or Long.MIN_VALUE if the resource is free then */

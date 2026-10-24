@@ -58,6 +58,7 @@ package com.projectlibre1.pm.scheduling.auto;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -71,12 +72,16 @@ import javax.swing.undo.CannotRedoException;
 import javax.swing.undo.CannotUndoException;
 import javax.swing.undo.UndoableEditSupport;
 
-import com.projectlibre1.datatype.Duration;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.assignment.AssignmentService;
+import com.projectlibre1.pm.availability.AvailabilityWarning;
+import com.projectlibre1.pm.dependency.Dependency;
+import com.projectlibre1.pm.dependency.DependencyService;
+import com.projectlibre1.pm.dependency.DependencyType;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
 import com.projectlibre1.pm.resource.Resource;
+import com.projectlibre1.pm.scheduling.ConstraintType;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.TaskCancellation;
@@ -84,13 +89,15 @@ import com.projectlibre1.pm.task.TaskCancellation;
 /**
  * Auto Schedule of a project, as a single undo step:
  * <ol>
- * <li>Auto Link without the sequences, so that only the logical links stay (see docs/auto-schedule-design.md)</li>
+ * <li>Auto Link without the sequences, so that only the logical links stay (see docs/auto-schedule-design.md).
+ * The links of the resources made by a previous Auto Schedule are links of Auto Link: they are removed too</li>
  * <li>The AutoScheduler assigns and schedules the tasks</li>
- * <li>Each task scheduled gets its resource, with units = the Max Units of the period of its start, and the
- * leveling delay of the task moves it to the start calculated (the work of the task is not changed: a task of
- * fixed work lasts work / units). The tasks without resource get a warning</li>
- * <li>The schedule is calculated, and the delays of the tasks starting elsewhere than calculated are corrected
- * (calendars of the resources, rounding), a few times</li>
+ * <li>Each task scheduled gets its resource, with units = the Max Units of the period of its start (the work of
+ * the task is not changed: a task of fixed work lasts work / units). The tasks without resource get a warning</li>
+ * <li>The order of the tasks of each resource is written as finish to start links (links of Auto Link), so that
+ * all the tasks are as soon as possible, after their links: no leveling delay</li>
+ * <li>The schedule is calculated. A task whose resource is not available then (Max Units of 0%, like before
+ * joining the project) gets a constraint Start No Earlier Than the date calculated</li>
  * </ol>
  * The work is done in small steps by next(), so that a progress dialog can repaint between them.
  */
@@ -98,9 +105,10 @@ public class AutoScheduleJob {
 	public static final int LINKING = 0;
 	public static final int SCHEDULING = 1;
 	public static final int ASSIGNING = 2;
-	public static final int RECALCULATING = 3;
-	public static final int CHECKING = 4;
-	public static final int DONE = 5;
+	public static final int SEQUENCING = 3;
+	public static final int RECALCULATING = 4;
+	public static final int CHECKING = 5;
+	public static final int DONE = 6;
 	private static final int TASKS_PER_STEP = 50;
 	private static final int MAX_CORRECTIONS = 5;
 	private static final long TOLERANCE = 60 * 1000L; // a start this close to the one calculated is right
@@ -111,9 +119,12 @@ public class AutoScheduleJob {
 	private AutoLinker linker;
 	private AutoScheduleModel model = null;
 	private final Map<NormalTask, State> before = new LinkedHashMap<NormalTask, State>();
+	private final List<AutoTask[]> sequences = new ArrayList<AutoTask[]>(); // links to create: predecessor, successor
+	private final Map<AutoTask, List<AutoTask>> sequenceSuccessors = new IdentityHashMap<AutoTask, List<AutoTask>>();
 	private int phase = LINKING;
 	private int done = 0;
 	private int corrections = 0;
+	private int constraints = 0;
 	private int wrongStarts = 0;
 	private int transactionId = 0;
 	private boolean undoStarted = false;
@@ -139,6 +150,12 @@ public class AutoScheduleJob {
 		this.options = options;
 		this.eventSource = eventSource;
 		this.linker = linkPlan == null || linkPlan.isEmpty() ? null : new AutoLinker(project, linkPlan, eventSource);
+	}
+
+	/** True if the task has the constraint Start No Earlier Than set by Auto Schedule, unchanged */
+	public static boolean hasOwnConstraint(NormalTask task) {
+		return task.getAutoScheduleStart() != 0 && task.getConstraintType() == ConstraintType.SNET
+				&& task.getConstraintDate() == task.getAutoScheduleStart();
 	}
 
 	/**
@@ -170,6 +187,7 @@ public class AutoScheduleJob {
 						normalTask.setAutoScheduleMissing(null, null);
 					}
 				}
+			findSequences();
 			transactionId = project.fireMultipleTransaction(0, true);
 			phase = ASSIGNING;
 			done = 0;
@@ -178,7 +196,19 @@ public class AutoScheduleJob {
 			List<AutoTask> tasks = model.getWorkTasks();
 			for (int n = 0; n < TASKS_PER_STEP && done < tasks.size(); n++)
 				write(tasks.get(done++));
-			if (done == tasks.size())
+			if (done == tasks.size()) {
+				phase = SEQUENCING;
+				done = 0;
+			}
+			return false;
+		case SEQUENCING:
+			for (int n = 0; n < TASKS_PER_STEP && done < sequences.size(); n++) {
+				AutoTask[] pair = sequences.get(done++);
+				Dependency dependency = Dependency.getInstance((NormalTask) pair[0].getSource(), (NormalTask) pair[1].getSource(), DependencyType.FS, 0);
+				dependency.setAuto(true);
+				DependencyService.getInstance().connect(dependency, eventSource);
+			}
+			if (done == sequences.size())
 				phase = RECALCULATING;
 			return false;
 		case RECALCULATING:
@@ -192,6 +222,7 @@ public class AutoScheduleJob {
 				corrections++;
 				return false;
 			}
+			wrongStarts = wrongStarts().size();
 			postEdit();
 			phase = DONE;
 			return true;
@@ -216,14 +247,71 @@ public class AutoScheduleJob {
 		}
 	}
 
-	/** The resource, the warning and the leveling delay of a task scheduled */
+	/**
+	 * The links between the tasks of each resource, in the order of their starts. A started task can be a
+	 * predecessor, not a successor. Links already there are not created again
+	 */
+	private void findSequences() {
+		Map<AutoResource, List<AutoTask>> byResource = new LinkedHashMap<AutoResource, List<AutoTask>>();
+		for (AutoTask task : model.getTasks()) {
+			List<AutoResource> resources;
+			if (task.getKind() == AutoTask.WORK && task.getStatus() == AutoTask.SCHEDULED)
+				resources = Collections.singletonList(task.getResource());
+			else if ((task.getKind() == AutoTask.WORK || task.getKind() == AutoTask.FIXED) && task.keptResources != null && task.getSource() instanceof NormalTask)
+				resources = task.keptResources;
+			else
+				continue;
+			for (AutoResource resource : resources) {
+				List<AutoTask> list = byResource.get(resource);
+				if (list == null) {
+					list = new ArrayList<AutoTask>();
+					byResource.put(resource, list);
+				}
+				list.add(task);
+			}
+		}
+		Comparator<AutoTask> byStart = new Comparator<AutoTask>() {
+			public int compare(AutoTask a, AutoTask b) {
+				return a.start != b.start ? (a.start < b.start ? -1 : 1) : a.order - b.order;
+			}
+		};
+		for (List<AutoTask> list : byResource.values()) {
+			Collections.sort(list, byStart);
+			for (int i = 1; i < list.size(); i++) {
+				AutoTask predecessor = list.get(i - 1), successor = list.get(i);
+				if (successor.getKind() != AutoTask.WORK || isLinked((NormalTask) predecessor.getSource(), (NormalTask) successor.getSource()))
+					continue;
+				sequences.add(new AutoTask[] { predecessor, successor });
+				List<AutoTask> successors = sequenceSuccessors.get(predecessor);
+				if (successors == null) {
+					successors = new ArrayList<AutoTask>(1);
+					sequenceSuccessors.put(predecessor, successors);
+				}
+				successors.add(successor);
+			}
+		}
+	}
+
+	private static boolean isLinked(NormalTask predecessor, NormalTask successor) {
+		for (Iterator i = successor.getPredecessorList().iterator(); i.hasNext();)
+			if (((Dependency) i.next()).getPredecessor() == predecessor)
+				return true;
+		return false;
+	}
+
+	/**
+	 * The resource and the warning of a task scheduled. Its leveling delay and the constraint set by a previous
+	 * Auto Schedule are removed: the links place it
+	 */
 	private void write(AutoTask node) {
 		NormalTask task = (NormalTask) node.getSource();
 		if (node.getStatus() == AutoTask.SCHEDULED)
 			assign(task, (Resource) node.getResource().getSource(), node.getUnits());
 		task.setAutoScheduleMissing(node.getStatus() == AutoTask.NO_RESOURCE ? node.getRole() : null, node.getRequiredSkill());
-		WorkingTime time = WorkingTime.of(task.getEffectiveWorkCalendar());
-		task.setLevelingDelay(Math.max(0, time.between(node.getStart(), node.getBegin())));
+		task.setLevelingDelay(0);
+		if (hasOwnConstraint(task))
+			task.setScheduleConstraint(ConstraintType.ASAP, 0);
+		task.setAutoScheduleStart(0);
 		task.markTaskAsNeedingRecalculation();
 	}
 
@@ -243,41 +331,55 @@ public class AutoScheduleJob {
 	}
 
 	/**
-	 * Corrects the leveling delays of the tasks not starting when calculated. A task after another one to correct
-	 * waits for the next time, as its start changes with the other one. Returns false if nothing changes
+	 * Tasks scheduled starting later than calculated (should be none). The links place the tasks: a task can
+	 * start a little earlier than calculated, as ProjectLibre rounds the work and durations to the millisecond
+	 */
+	private List<AutoTask> wrongStarts() {
+		List<AutoTask> wrong = new ArrayList<AutoTask>();
+		for (AutoTask node : model.getWorkTasks())
+			if (((NormalTask) node.getSource()).getStart() > node.getStart() + TOLERANCE)
+				wrong.add(node);
+		return wrong;
+	}
+
+	/**
+	 * A task whose resource is not available during it (Max Units of 0%, like before joining the project) gets a
+	 * constraint Start No Earlier Than the date calculated, in a period when the resource is available. A task
+	 * after another one to correct waits for the next time, as its start changes with the other one.
+	 * Returns false if nothing changes
 	 */
 	private boolean correct() {
 		List<AutoTask> wrong = new ArrayList<AutoTask>();
 		for (AutoTask node : model.getWorkTasks())
-			if (Math.abs(((NormalTask) node.getSource()).getStart() - node.getStart()) > TOLERANCE)
+			if (node.getStatus() != AutoTask.NO_RESOURCE && !AvailabilityWarning.unavailablePeriods((NormalTask) node.getSource()).isEmpty())
 				wrong.add(node);
-		wrongStarts = wrong.size();
 		if (wrong.isEmpty())
 			return false;
 		Set<AutoTask> after = Collections.newSetFromMap(new IdentityHashMap<AutoTask, Boolean>());
 		Deque<AutoTask> stack = new ArrayDeque<AutoTask>();
 		for (AutoTask node : wrong)
+			stack.push(node);
+		while (!stack.isEmpty()) {
+			AutoTask node = stack.pop();
 			for (AutoTask.Link link : node.successors)
 				if (after.add(link.successor))
 					stack.push(link.successor);
-		while (!stack.isEmpty())
-			for (AutoTask.Link link : stack.pop().successors)
-				if (after.add(link.successor))
-					stack.push(link.successor);
+			List<AutoTask> successors = sequenceSuccessors.get(node);
+			if (successors != null)
+				for (AutoTask successor : successors)
+					if (after.add(successor))
+						stack.push(successor);
+		}
 		List<NormalTask> changed = new ArrayList<NormalTask>();
 		for (AutoTask node : wrong) {
-			if (after.contains(node))
-				continue;
 			NormalTask task = (NormalTask) node.getSource();
-			WorkingTime time = WorkingTime.of(task.getEffectiveWorkCalendar());
-			long actual = task.getStart(), expected = node.getStart();
-			long oldDelay = Duration.millis(task.getLevelingDelay());
-			long delay = Math.max(0, oldDelay + (expected > actual ? time.between(expected, actual) : -time.between(actual, expected)));
-			if (delay != oldDelay) {
-				task.setLevelingDelay(delay);
-				task.markTaskAsNeedingRecalculation();
-				changed.add(task);
-			}
+			if (after.contains(node) || hasOwnConstraint(task))
+				continue;
+			task.setScheduleConstraint(ConstraintType.SNET, node.getStart());
+			task.setAutoScheduleStart(node.getStart());
+			task.markTaskAsNeedingRecalculation();
+			changed.add(task);
+			constraints++;
 		}
 		if (changed.isEmpty())
 			return false;
@@ -298,7 +400,7 @@ public class AutoScheduleJob {
 			before.put(task, new State(task));
 	}
 
-	/** The edit undoing the delays and warnings, after the ones of the links and assignments */
+	/** The edit undoing the changes of the tasks, after the ones of the links and assignments */
 	private void postEdit() {
 		if (editPosted || before.isEmpty())
 			return;
@@ -311,7 +413,7 @@ public class AutoScheduleJob {
 			undo.postEdit(new ScheduleEdit(project, before, after));
 	}
 
-	/** One of LINKING, SCHEDULING, ASSIGNING, RECALCULATING, CHECKING, DONE: what the next call to next() does */
+	/** One of LINKING, SCHEDULING, ASSIGNING, SEQUENCING, RECALCULATING, CHECKING, DONE: what next() does */
 	public int getPhase() {
 		return phase;
 	}
@@ -323,21 +425,29 @@ public class AutoScheduleJob {
 	public boolean isLongStep() {
 		return phase == SCHEDULING || phase == RECALCULATING || phase == CHECKING || (phase == LINKING && linker != null && linker.isLongStep());
 	}
-	/** Tasks processed in the current phase */
+	/** Tasks or links processed in the current phase */
 	public int getDone() {
 		return phase == LINKING && linker != null ? linker.getDone() : done;
 	}
-	/** Tasks to process in the current phase, 0 if it is a single operation */
+	/** Tasks or links to process in the current phase, 0 if it is a single operation */
 	public int getTotal() {
 		if (phase == LINKING)
 			return linker == null ? 0 : linker.getTotal();
-		return phase == ASSIGNING ? model.getWorkTasks().size() : 0;
+		return phase == ASSIGNING ? model.getWorkTasks().size() : phase == SEQUENCING ? sequences.size() : 0;
 	}
 	/** The tasks and resources with the results, null before the scheduling */
 	public AutoScheduleModel getModel() {
 		return model;
 	}
-	/** Tasks not starting when calculated after the corrections (should be 0) */
+	/** Links created between the tasks of each resource */
+	public int getSequenceCount() {
+		return sequences.size();
+	}
+	/** Constraints Start No Earlier Than set, for resources not available before */
+	public int getConstraintCount() {
+		return constraints;
+	}
+	/** Tasks starting later than calculated at the end (should be 0) */
 	public int getWrongStarts() {
 		return wrongStarts;
 	}
@@ -356,15 +466,23 @@ public class AutoScheduleJob {
 		final long delay;
 		final String role;
 		final String skill;
+		final int constraintType;
+		final long constraintDate;
+		final long autoScheduleStart;
 
 		State(NormalTask task) {
 			delay = task.getLevelingDelay();
 			role = task.getAutoScheduleRole();
 			skill = task.getAutoScheduleSkill();
+			constraintType = task.getConstraintType();
+			constraintDate = task.getConstraintDate();
+			autoScheduleStart = task.getAutoScheduleStart();
 		}
 		void apply(NormalTask task) {
 			task.setLevelingDelay(delay);
 			task.setAutoScheduleMissing(role, skill);
+			task.setScheduleConstraint(constraintType, constraintDate);
+			task.setAutoScheduleStart(autoScheduleStart);
 			task.markTaskAsNeedingRecalculation();
 		}
 	}
