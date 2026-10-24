@@ -164,6 +164,7 @@ import com.projectlibre1.dialog.ResourceInformationDialog;
 import com.projectlibre1.dialog.ResourceMappingDialog;
 import com.projectlibre1.dialog.TaskInformationDialog;
 import com.projectlibre1.dialog.TipOfTheDay;
+import com.projectlibre1.dialog.RecentProjects;
 import com.projectlibre1.dialog.WelcomeDialog;
 import com.projectlibre1.dialog.assignment.AssignmentDialog;
 import com.projectlibre1.dialog.options.CalendarDialogBox;
@@ -562,6 +563,8 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 
 		frameList.add(frame);
 		frameMap.put(project, frame);
+		if (project.getFileName() != null)
+			RecentProjects.add(project.getName(), project.getFileName());
 
 		// clear filter/grouping/sort for newly opened or created project
 		if (!Environment.isPlugin()) SwingUtilities.invokeLater( new Runnable() {
@@ -634,7 +637,9 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		WelcomeDialog instance = WelcomeDialog.getInstance(getFrame(),getMenuManager());
 		if (instance.doModal()) {
 			waitInitialization();
-			if (instance.getForm().isCreateProject())
+			if (instance.getForm().getRecentFile() != null)
+				loadLocalDocument(instance.getForm().getRecentFile(),!Environment.getStandAlone());
+			else if (instance.getForm().isCreateProject())
 				doNewProjectDialog();
 			else if (instance.getForm().isOpenProject()){
 				if(Environment.getStandAlone()) openLocalProject();
@@ -2404,6 +2409,7 @@ protected boolean loadLocalDocument(String fileName,boolean merge){ //uses serve
 			opt.setPostSaving(new Closure(){
 				public void execute(Object arg0) {
 					if (saveAs) frame.setId(project.getUniqueId()+""); //$NON-NLS-1$
+					RecentProjects.add(project.getName(), project.getFileName());
 					refreshSaveStatus(true);
 				}
 			});
