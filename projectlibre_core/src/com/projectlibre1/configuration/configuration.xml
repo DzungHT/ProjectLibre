@@ -317,6 +317,8 @@
 			<field property="cancelled" id="Field.cancelled" readOnly="true" />
 			<field property="cancelReason" id="Field.cancelReason" />
 			<field property="cancelDate" id="Field.cancelDate" date="true" readOnly="true" />
+			<!-- the dates do not follow a link or a constraint, see ScheduleValidator: for the filter -->
+			<field property="linkIssue" id="Field.linkIssue" readOnly="true" />
 
 		</class>
 		<class name="com.projectlibre1.pm.snapshot.BaselineScheduleFields">

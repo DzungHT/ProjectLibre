@@ -149,6 +149,8 @@ import com.projectlibre1.dialog.AutoLinkDialog;
 import com.projectlibre1.dialog.LaborCatalogDialog;
 import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
+import com.projectlibre1.dialog.ValidateLinksDialog;
+import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
@@ -1058,6 +1060,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
+		actionsMap.addHandler(ACTION_VALIDATE_LINKS, new ValidateLinksAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
@@ -1866,6 +1869,18 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	/** Lists the tasks whose dates do not follow their links or constraints, see ScheduleValidator */
+	public class ValidateLinksAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			ValidateLinksDialog.show(frame, ScheduleValidator.validate(frame.getProject()));
 		}
 	}
 	/** Cancels or un-cancels the selected tasks */
