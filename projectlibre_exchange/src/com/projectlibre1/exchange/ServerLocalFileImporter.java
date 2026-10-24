@@ -55,6 +55,7 @@
  *******************************************************************************/
 package com.projectlibre1.exchange;
 
+import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
@@ -124,7 +125,7 @@ public class ServerLocalFileImporter extends ServerFileImporter {
     	        System.out.println("Loading "+importer.getFileName()+"..."); //$NON-NLS-1$ //$NON-NLS-2$
 
     	        long t1=System.currentTimeMillis();
-    	        ObjectInputStream in=new ObjectInputStream(new FileInputStream(importer.getFileName()));
+    	        ObjectInputStream in=new ObjectInputStream(new BufferedInputStream(new FileInputStream(importer.getFileName()),65536));
     	        Object obj=in.readObject();
     	        if (obj instanceof String) obj=in.readObject(); //check version in the future
     	        projectData=(ProjectData)obj;
