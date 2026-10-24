@@ -118,7 +118,7 @@ public class LocalFileImporter extends FileImporter {
 				System.out.println("Loading"+getFileName()+"..."); //$NON-NLS-1$ //$NON-NLS-2$
 
 				long t1=System.currentTimeMillis();
-				ObjectInputStream in=new ObjectInputStream(fin);
+				ObjectInputStream in=new ObjectInputStream(new BufferedInputStream(fin,65536)); // ObjectInputStream reads the file by small pieces
 				Object obj=in.readObject();
 				if (obj instanceof String) obj=in.readObject(); //check version in the future
 				DocumentData projectData=(DocumentData)obj;

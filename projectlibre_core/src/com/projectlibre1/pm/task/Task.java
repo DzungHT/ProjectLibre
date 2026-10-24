@@ -57,7 +57,6 @@ package com.projectlibre1.pm.task;
 
 import java.util.Collection;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -673,30 +672,18 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
  * - A task depends on its predecessors children
  *
  * @param other Task to compare to
- * @param set - A set used to prevent treating same task twice
+ * @param visit - Number of this look up, marking the tasks already treated, see nextDependsOnVisit()
  * @return true if linking to other would cause a circular link
  */
-	private boolean dependsOn(Task other, Task me,HashSet set, String taskNames) {
-		// To avoid infinite loops which can occur under certain circumstances, use a set to prevent looking up twice
-		if (set.contains(this))
+	private boolean dependsOn(Task other, Task me,int visit) {
+		// To avoid infinite loops which can occur under certain circumstances, mark the tasks to prevent looking up twice
+		if (dependsOnVisit == visit)
 			return false;
-		set.add(this);
-
-
-
+		dependsOnVisit = visit;
 
 		// Here is the primary exit point.  We have arrived back at the other node, so it is circular
-		if (this == other) {
-			if (taskNames != null)
-				System.out.println("Circular: \n" + taskNames);
+		if (this == other)
 			return true;
-		}
-
-
-
-		if (taskNames != null)
-			taskNames += (getId() +": " + getName() + '\n');
-
 
 		Task predecessor;
 		Dependency dep;
@@ -710,7 +697,7 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 			if (dep.isDisabled())
 				continue;
 			predecessor = (Task)dep.getPredecessor(); // I depend on my predecessors
-			if (predecessor.dependsOn(other,me,set,taskNames == null ? null : taskNames + "Pred-"))
+			if (predecessor.dependsOn(other,me,visit))
 				return true;
 		}
 
@@ -721,7 +708,7 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 //			if (!this.isAncestorOrDescendent(other))
 			if (parent != null) {
 	//			if ( !other.wbsDescendentOf(parent))
-					if (parent.dependsOn(other,me,set,taskNames == null? null: taskNames + "Parent- " ))
+					if (parent.dependsOn(other,me,visit))
 						return true;
 
 			}
@@ -752,7 +739,7 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 						continue;
 					}
 
-					if (predecessor.dependsOn(other,me,set,taskNames == null ? null : taskNames + "pred-child " + child.getId()))
+					if (predecessor.dependsOn(other,me,visit))
 						return true;
 				}
 
@@ -809,8 +796,18 @@ public abstract class Task implements HasKey, HasNotes, HasCalendar, HasDependen
 			return true;
 
 
-		HashSet set = new HashSet();
-		return dependsOn((Task)other,this,set,"");
+		return dependsOn((Task)other,this,nextDependsOnVisit());
+	}
+	/**
+	 * Number of the current look up of dependsOn(): a task marked with it was already treated. A new number is
+	 * cheaper than a set of the treated tasks, as each new link looks up the tasks it depends on (when loading too)
+	 */
+	private static int dependsOnVisits = 0;
+	private transient int dependsOnVisit = 0;
+	private static synchronized int nextDependsOnVisit() {
+		if (++dependsOnVisits == 0) // after wrapping, never 0, the number of a task never looked up
+			dependsOnVisits = 1;
+		return dependsOnVisits;
 	}
 
 	/**
