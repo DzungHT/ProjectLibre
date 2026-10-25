@@ -239,6 +239,8 @@ public class ResourcePlan {
 		public double getManMonths() { return getAllocatedHours() / NormalTask.HOURS_PER_MAN_DAY / NormalTask.MAN_DAYS_PER_MAN_MONTH; }
 		/** Expected production (SLSX), man-hours of ULNL effort the people can do: RA × point × utilization */
 		public double getOutputHours() { return people * perPerson; }
+		/** Expected production of one person of the line: point × % × working hours × utilization */
+		public double getOutputHoursPerPerson() { return perPerson; }
 		public double getCost() { return getManMonths() * price; }
 	}
 
