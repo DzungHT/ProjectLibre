@@ -1935,6 +1935,15 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	public void setLane(String lane) {
 		this.lane = emptyToNull(lane);
 	}
+	/** True if the people of the task are fixed: the suggestions and the bulk changes of the Assignment board keep them */
+	private boolean assignmentLocked = false;
+
+	public boolean isAssignmentLocked() {
+		return assignmentLocked;
+	}
+	public void setAssignmentLocked(boolean assignmentLocked) {
+		this.assignmentLocked = assignmentLocked;
+	}
 	/**
 	 * Cancelled task, like an inactive task of MS Project: its remaining work is set to 0 so that it does not
 	 * extend the schedule, and kept to be restored when it is un-cancelled. Its links, assignments, actual work
@@ -2312,6 +2321,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			n.functionCode = functionCode;
 			n.activity = activity;
 			n.lane = lane;
+			n.assignmentLocked = assignmentLocked;
 			n.cancelled = cancelled;
 			n.cancelDate = cancelDate;
 			n.cancelReason = cancelReason;
