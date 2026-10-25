@@ -226,6 +226,16 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 	private transient List<Task> repaired = null;
 	private transient Date creationDate,lastModificationDate;
 
+	/** Parameters of the Resource Plan (deadline, periods, effort added...), see ResourcePlanOptions. Null if never set */
+	private String resourcePlanSettings = null;
+
+	public String getResourcePlanSettings() {
+		return resourcePlanSettings;
+	}
+	public void setResourcePlanSettings(String resourcePlanSettings) {
+		this.resourcePlanSettings = resourcePlanSettings;
+	}
+
 	public NodeModel getTaskModel() {
 		if (taskModel == null)
 			taskModel=NodeModelFactory.createTaskModel(this);

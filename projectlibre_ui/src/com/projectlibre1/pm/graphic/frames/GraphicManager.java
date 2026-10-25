@@ -146,6 +146,7 @@ import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.dialog.ResourcePlanDialog;
 import com.projectlibre1.dialog.LaborCatalogDialog;
 import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
@@ -153,6 +154,8 @@ import com.projectlibre1.dialog.ValidateLinksDialog;
 import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
+import com.projectlibre1.pm.resource.plan.ResourcePlan;
+import com.projectlibre1.pm.resource.plan.ResourcePlanWriter;
 import com.projectlibre1.dialog.ExportWbsExcelDialog;
 import com.projectlibre1.dialog.ImportWbsExcelDialog;
 import com.projectlibre1.dialog.FindDialog;
@@ -1061,6 +1064,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
 		actionsMap.addHandler(ACTION_VALIDATE_LINKS, new ValidateLinksAction());
+		actionsMap.addHandler(ACTION_RESOURCE_PLAN, new ResourcePlanAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
@@ -1911,6 +1915,37 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			DocumentFrame frame = getCurrentFrame();
 			frame.activateResourceView();
 			return frame.getResourceView().getSpreadSheet();
+		}
+	}
+	/** People needed by role, level and skill for a deadline, see ResourcePlan. Writes them as TBD resources */
+	public class ResourcePlanAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			ResourcePlan plan = ResourcePlanDialog.doDialog(frame.getProject());
+			if (plan == null)
+				return;
+			try {
+				List<String> warnings = ResourcePlanWriter.apply(plan);
+				frame.activateResourceView();
+				if (!warnings.isEmpty()) {
+					StringBuilder text = new StringBuilder();
+					for (String warning : warnings)
+						text.append(text.length() == 0 ? "" : "\n").append(warning); //$NON-NLS-1$ //$NON-NLS-2$
+					Alert.warn(text.toString(), getFrameInstance());
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), getFrameInstance());
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
 		}
 	}
 	/** The labor categories: role, level, point and price of a man-month, imported from the NLTC table */
