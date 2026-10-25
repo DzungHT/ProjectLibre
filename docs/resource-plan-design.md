@@ -19,7 +19,7 @@ cách tính, làm ngay sau (mục 7).
 | Tình huống | Đầu vào cố định | Tính ra |
 |---|---|---|
 | Fixed-price, có deadline khách mong muốn | deadline | số người mỗi role/level, khoảng thời gian |
-| T&M, khách cần gấp | deadline + team hiện có | người **tăng cường**: role, level, số lượng, từ ngày–đến ngày |
+| T&M, khách cần gấp | deadline + team hiện có | người **dự kiến bổ sung (TBD)**: role, level, số lượng, từ ngày–đến ngày |
 | Fixed-price, deadline không kịp | số người tối đa | deadline sớm nhất để propose (mục 7) |
 
 ## 2. Dữ liệu đầu vào
@@ -60,16 +60,16 @@ Một **dòng** = một nhóm người giống nhau:
 
 | Role | Kỹ năng | Level | Từ ngày | Đến ngày | % phân bổ | Số lượng | Nguồn |
 |---|---|---|---|---|---|---|---|
-| BA | | 4 - Middle (M) | 02/11/2026 | 29/01/2027 | 100% | 1 | Tăng cường |
-| BA | | 2 - Junior (J) | 02/11/2026 | 29/01/2027 | 100% | **auto** → 5 | Tăng cường |
-| DEV | BE | 2 - Junior (J) | 16/11/2026 | 12/03/2027 | 100% | auto → 6 | Tăng cường |
-| DEV | BE | 4 - Middle (M) | 16/11/2026 | 12/03/2027 | 100% | 2 | Có sẵn (khoá) |
-| PM | | 4 - Middle (M) | 02/11/2026 | 26/03/2027 | 50% | 1 | Tăng cường |
+| BA | | 4 - Middle (M) | 02/11/2026 | 29/01/2027 | 100% | 1 | Dự kiến (TBD) |
+| BA | | 2 - Junior (J) | 02/11/2026 | 29/01/2027 | 100% | **auto** → 5 | Dự kiến (TBD) |
+| DEV | BE | 2 - Junior (J) | 16/11/2026 | 12/03/2027 | 100% | auto → 6 | Dự kiến (TBD) |
+| DEV | BE | 4 - Middle (M) | 16/11/2026 | 12/03/2027 | 100% | 2 | Hiện có (khoá) |
+| PM | | 4 - Middle (M) | 02/11/2026 | 26/03/2027 | 50% | 1 | Dự kiến (TBD) |
 
 - **Số lượng** nhập tay, hoặc **auto**: mỗi nhóm role/kỹ năng có tối đa một dòng auto, dòng đó lấp phần effort còn thiếu.
   Mặc định mỗi role/kỹ năng có một dòng auto ở level chuẩn (BA L2, DEV L2, TESTER L2).
-- **Nguồn = Có sẵn**: resource đã có trong dự án (T&M), không đổi số lượng, chỉ tính vào năng lực. Các dòng còn lại là
-  **tăng cường** → kết quả "cần thêm bao nhiêu, trong bao lâu".
+- **Nguồn = Hiện có** (named resource): resource đã có trong dự án (T&M), không đổi số lượng, chỉ tính vào năng lực. Các dòng còn lại là
+  **dự kiến (TBD)** (generic resource) → kết quả "cần thêm bao nhiêu, trong bao lâu".
 
 ## 4. Cách tính (theo năng lực, không xếp lịch)
 
@@ -115,11 +115,27 @@ hạn dưới.
 - Nhóm có **số người vượt giới hạn** (tham số số người tối đa mỗi role) → báo đỏ.
 - Đây là ước lượng nhanh. Lịch thật do ProjectLibre tính sau bước 2 (Assignment) và 3 (Re-link).
 
+### 4.3 Ngưỡng chênh lệch năng lực – effort
+
+Năng lực hiếm khi khớp đúng effort, nên chênh lệch được đánh giá theo **Tải = Effort / Năng lực** của từng
+role/kỹ năng: tải 117% là thiếu 17%, tải 80% là thừa 20%.
+
+| Tham số (mặc định) | Thiếu (tải > 100%) | Thừa (tải < 100%) |
+|---|---|---|
+| Cảnh báo khi trên | 5% | 20% |
+| Không đạt khi trên | 15% | 50% |
+
+- Trong ngưỡng cảnh báo: chấp nhận, không tô màu. Vượt ngưỡng cảnh báo: màu cam, ghi cảnh báo, vẫn khả thi.
+  Vượt ngưỡng không đạt: màu đỏ, kế hoạch không khả thi.
+- Dòng Auto lấy số người ít nhất mà phần thiếu vẫn trong ngưỡng cảnh báo (cần 3.04 người → 3 người).
+- Nhóm chỉ có 1 người mà thừa vượt ngưỡng không đạt: chỉ cảnh báo (gợi ý giảm % workload).
+- Nhóm có người mà không có effort: cảnh báo.
+
 ## 5. Ghi vào dự án
 
 **Resource là nơi lưu duy nhất**, không có bảng kế hoạch riêng:
 
-- Apply: mỗi người của dòng tăng cường thành một resource **Generic (TBD)**, tên `BA J #3 (TBD)`, role, level, kỹ năng như
+- Apply: mỗi người của dòng dự kiến thành một resource **Generic (TBD)**, tên `BA J #3 (TBD)`, role, level, kỹ năng như
   dòng, Availability: 0% trước *Từ*, `point × %` trong [Từ, Đến], 0% sau *Đến* (field gốc, P1 đã hỗ trợ nhiều khoảng).
 - Mở lại hộp thoại: đọc các resource có role, **gom** theo (role, kỹ năng, level, từ, đến, %, TBD hay có sẵn) → các dòng.
 - Apply lại: các resource TBD **chưa có phân công** được xoá và tạo lại theo các dòng (đánh số lại #1, #2...).

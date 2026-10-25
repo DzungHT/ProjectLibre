@@ -61,9 +61,15 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
@@ -77,8 +83,10 @@ import java.util.prefs.Preferences;
 
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
+import javax.swing.Box;
 import javax.swing.DefaultCellEditor;
 import javax.swing.DefaultListCellRenderer;
+import javax.swing.DropMode;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
@@ -94,6 +102,7 @@ import javax.swing.JTable;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.TransferHandler;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.table.AbstractTableModel;
@@ -103,6 +112,7 @@ import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import javax.swing.table.TableColumnModel;
+import javax.swing.text.JTextComponent;
 
 import net.sf.nachocalendar.CalendarFactory;
 import net.sf.nachocalendar.components.DateField;
@@ -129,9 +139,12 @@ import com.projectlibre1.util.DateTime;
 public final class ResourcePlanDialog extends AbstractDialog {
 	private static final long serialVersionUID = 1L;
 	private static final int MAX_DAYS = 999;
+	private static final int MAX_PERCENT = 1000;
 	// columns of the groups
-	private static final int G_ROLE = 0, G_SKILL = 1, G_TASKS = 2, G_WBS = 3, G_EXTRA = 4, G_EFFORT = 5, G_OUTPUT = 6, G_BALANCE = 7, G_LOAD = 8;
-	private static final String[] G_HEADERS = { "Role", "Skill", "Tasks", "WbsDays", "ExtraDays", "EffortDays", "GroupOutput", "Balance", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$
+	private static final int G_ROLE = 0, G_SKILL = 1, G_HEADCOUNT = 2, G_EXISTING = 3, G_NEW = 4, G_TASKS = 5, G_WBS = 6, G_EXTRA = 7,
+			G_EFFORT = 8, G_OUTPUT = 9, G_BALANCE = 10, G_LOAD = 11;
+	private static final String[] G_HEADERS = { "Role", "Skill", "GroupHeadcount", "GroupExisting", "GroupNew", "Tasks", "WbsDays", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+			"ExtraDays", "EffortDays", "GroupOutput", "Balance", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
 	// columns of the lines, then a total row
 	private static final int L_SOURCE = 0, L_ROLE = 1, L_SKILL = 2, L_LEVEL = 3, L_FROM = 4, L_TO = 5, L_ALLOCATION = 6, L_QUANTITY = 7,
 			L_HEADCOUNT = 8, L_FTE = 9, L_NLTC = 10, L_RA = 11, L_OUTPUT = 12, L_COST = 13;
@@ -167,6 +180,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 
 	DateField start, deadline;
 	JSpinner buffer, utilization, devLag, testerLag, testTail, baTail, maxPeople;
+	JSpinner shortageWarning, shortageLimit, surplusWarning, surplusLimit; // thresholds of the gap between capacity and effort, %
 	JTable groupTable, lineTable;
 	AbstractTableModel groupModel, lineModel;
 	ColumnSet groupColumns, lineColumns; // the columns that can be hidden
@@ -198,6 +212,10 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		testTail = spinner(0, MAX_DAYS);
 		baTail = spinner(0, MAX_DAYS);
 		maxPeople = spinner(1, MAX_DAYS);
+		shortageWarning = spinner(0, MAX_PERCENT);
+		shortageLimit = spinner(0, MAX_PERCENT);
+		surplusWarning = spinner(0, MAX_PERCENT);
+		surplusLimit = spinner(0, MAX_PERCENT);
 		verdict = new JLabel();
 		verdict.setVerticalAlignment(SwingConstants.TOP);
 		showParameters();
@@ -212,6 +230,12 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		deadline.addChangeListener(listener);
 		for (JSpinner spinner : spinners())
 			spinner.addChangeListener(listener);
+		setDefaultCloseOperation(DO_NOTHING_ON_CLOSE); // closing the window asks to save the changes, see onCancel()
+		addWindowListener(new WindowAdapter() {
+			public void windowClosing(WindowEvent e) {
+				onCancel();
+			}
+		});
 	}
 
 	private static JSpinner spinner(int min, int max) {
@@ -219,7 +243,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	}
 
 	private JSpinner[] spinners() {
-		return new JSpinner[] { buffer, utilization, devLag, testerLag, testTail, baTail, maxPeople };
+		return new JSpinner[] { buffer, utilization, devLag, testerLag, testTail, baTail, maxPeople, shortageWarning, shortageLimit, surplusWarning, surplusLimit };
 	}
 
 	/** Shows the options. A date not set is the one of the plan: the start or the end of the project */
@@ -235,6 +259,10 @@ public final class ResourcePlanDialog extends AbstractDialog {
 			testTail.setValue(options.getTestTail());
 			baTail.setValue(options.getBaTail());
 			maxPeople.setValue(options.getMaxPeople());
+			shortageWarning.setValue(options.getShortageWarning());
+			shortageLimit.setValue(options.getShortageLimit());
+			surplusWarning.setValue(options.getSurplusWarning());
+			surplusLimit.setValue(options.getSurplusLimit());
 		} finally {
 			updating = false;
 		}
@@ -250,6 +278,10 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		options.setTestTail(intValue(testTail));
 		options.setBaTail(intValue(baTail));
 		options.setMaxPeople(intValue(maxPeople));
+		options.setShortageWarning(intValue(shortageWarning));
+		options.setShortageLimit(intValue(shortageLimit));
+		options.setSurplusWarning(intValue(surplusWarning));
+		options.setSurplusLimit(intValue(surplusLimit));
 	}
 
 	/** The day chosen in a date field, as the dates of the project: midnight GMT. 0 if none */
@@ -306,16 +338,24 @@ public final class ResourcePlanDialog extends AbstractDialog {
 			return false;
 		if (version != null && isChanged()) // the plan applied is the one of the version
 			saveVersion(version.getName());
-		versions.setApplied(version == null ? null : version.getName());
+		versions.setApplied(version); // after saving it: the plan applied is the one of the version
 		versions.setLast(version == null ? null : version.getName());
 		versions.save(project);
 		return true;
 	}
 
-	/** Apply writes the plan in the resources, Close keeps them as they are */
-	protected void createOkCancelButtons() {
-		createOkCancelButtons(Messages.getString("ResourcePlan.Apply"), Messages.getString("ButtonText.Close")); //$NON-NLS-1$ //$NON-NLS-2$
-		ok.setToolTipText(Messages.getString("ResourcePlan.ApplyTooltip")); //$NON-NLS-1$
+	/** No buttons at the bottom: Apply is in the bar of the versions, the dialog is closed by its window */
+	protected boolean hasOkAndCancelButtons() {
+		return false;
+	}
+
+	/** Enter does not apply the plan: only the Apply button does, see apply() */
+	public void onOk() {
+	}
+
+	/** Writes the plan in the resources, see bind() */
+	private void apply() {
+		super.onOk();
 	}
 
 	/** Closes without changing the resources, after asking to save the changes in a version */
@@ -353,7 +393,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 			public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean hasFocus) {
 				String text = value instanceof ResourcePlanVersions.Version ? ((ResourcePlanVersions.Version) value).getName()
 						: Messages.getString("ResourcePlan.ResourcesPlan"); //$NON-NLS-1$
-				if (value instanceof ResourcePlanVersions.Version && text.equals(versions.getApplied()))
+				if (value instanceof ResourcePlanVersions.Version && versions.isApplied((ResourcePlanVersions.Version) value))
 					text += " (" + Messages.getString("ResourcePlan.AppliedMark") + ")"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				return super.getListCellRendererComponent(list, text, index, isSelected, hasFocus);
 			}
@@ -386,6 +426,11 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				saveVersionAs();
 			}
 		});
+		JButton reload = button("ResourcePlan.ReloadVersion", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				reloadVersion();
+			}
+		});
 		JButton rename = button("ResourcePlan.RenameVersion", new ActionListener() { //$NON-NLS-1$
 			public void actionPerformed(ActionEvent e) {
 				renameVersion();
@@ -402,8 +447,17 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		panel.add(versionChoice);
 		panel.add(save);
 		panel.add(saveAs);
+		panel.add(reload);
 		panel.add(rename);
 		panel.add(delete);
+		JButton applyButton = button("ResourcePlan.Apply", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				apply();
+			}
+		});
+		applyButton.setFont(applyButton.getFont().deriveFont(Font.BOLD));
+		panel.add(Box.createHorizontalStrut(10));
+		panel.add(applyButton);
 		panel.add(versionStatus);
 		return panel;
 	}
@@ -480,6 +534,16 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		return name == null || name.toString().trim().length() == 0 ? null : name.toString().trim();
 	}
 
+	/** Shows again the version as it was last saved (or the plan of the resources), after confirming to lose the changes */
+	private void reloadVersion() {
+		stopEditing();
+		if (isChanged() && JOptionPane.showConfirmDialog(this, MessageFormat.format(Messages.getString("ResourcePlan.ReloadConfirm"), //$NON-NLS-1$
+				version == null ? Messages.getString("ResourcePlan.ResourcesPlan") : version.getName()), getTitle(), //$NON-NLS-1$
+				JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+			return;
+		loadVersion(version);
+	}
+
 	private void renameVersion() {
 		if (version == null)
 			return;
@@ -510,7 +574,10 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		showVersionStatus();
 	}
 
-	/** When the version shown was saved, if it is the one applied, and if it has changes not saved */
+	/**
+	 * When the version shown was saved, and if it is applied: only when the resources have the plan shown, so not once it
+	 * is changed, saved or not, after being applied
+	 */
 	private void showVersionStatus() {
 		if (versionStatus == null)
 			return;
@@ -520,8 +587,12 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		else {
 			text.append(MessageFormat.format(Messages.getString("ResourcePlan.SavedAt"), //$NON-NLS-1$
 					DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(version.getSaved()))));
-			if (version.getName().equals(versions.getApplied()))
+			if (versions.isApplied(version) && !isChanged())
 				text.append(" &middot; <font color='#2e7d32'>").append(Messages.getString("ResourcePlan.AppliedMark")).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			else if (version.getName().equals(versions.getApplied()))
+				text.append(" &middot; <font color='#b26a00'>").append(Messages.getString("ResourcePlan.ChangedSinceApplied")).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			else
+				text.append(" &middot; ").append(Messages.getString("ResourcePlan.NotApplied")); //$NON-NLS-1$ //$NON-NLS-2$
 		}
 		if (isChanged())
 			text.append(" &middot; <font color='red'>").append(Messages.getString("ResourcePlan.Unsaved")).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
@@ -571,7 +642,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		parameters.nextLine();
 		parameters.append(Messages.getString("ResourcePlan.Buffer"), buffer); //$NON-NLS-1$
 		parameters.append(Messages.getString("ResourcePlan.TestTail"), testTail); //$NON-NLS-1$
-		parameters.append("", defaults); //$NON-NLS-1$
+		parameters.append(""); //$NON-NLS-1$
+		parameters.append(""); //$NON-NLS-1$
 		parameters.nextLine();
 		parameters.append(""); //$NON-NLS-1$
 		parameters.append(""); //$NON-NLS-1$
@@ -591,6 +663,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		builder.append(versionBar());
 		builder.appendSeparator(Messages.getString("ResourcePlan.Parameters")); //$NON-NLS-1$
 		builder.append(parameters.getPanel());
+		builder.append(thresholds());
+		builder.append(buttons(defaults));
 		builder.append(help("ResourcePlan.ParametersHelp")); //$NON-NLS-1$
 		loadUnit();
 		builder.appendSeparator(Messages.getString("ResourcePlan.Effort")); //$NON-NLS-1$
@@ -600,9 +674,16 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		builder.append(groupHeader);
 		builder.append(groupScroll);
 		builder.appendSeparator(Messages.getString("ResourcePlan.Lines")); //$NON-NLS-1$
+		JButton sort = button("ResourcePlan.SortLines", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				stopEditing();
+				plan.sortLines();
+				update();
+			}
+		});
 		JPanel lineHeader = new JPanel(new BorderLayout());
 		lineHeader.add(unitChooser(), BorderLayout.WEST);
-		lineHeader.add(lineColumns.button(), BorderLayout.EAST);
+		lineHeader.add(buttons(sort, lineColumns.button()), BorderLayout.EAST);
 		builder.append(lineHeader);
 		builder.append(lineScroll);
 		builder.append(buttons(addLine, removeLine, defaultDates));
@@ -612,6 +693,33 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		savedSnapshot = plan.snapshot();
 		showVersionStatus();
 		return builder.getPanel();
+	}
+
+	/**
+	 * The thresholds of the gap between capacity and effort, in % of the effort: a shortage or a surplus up to the warning
+	 * is accepted, over the warning it is shown in orange, over the limit in red and the plan fails
+	 */
+	private JComponent thresholds() {
+		FormLayout layout = new FormLayout("pref, 6dlu, pref, 3dlu, 40dlu, 2dlu, pref, 8dlu, pref, 3dlu, 40dlu, 2dlu, pref", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
+		JLabel title = new JLabel(Messages.getString("ResourcePlan.Thresholds")); //$NON-NLS-1$
+		title.setToolTipText("<html><div style='width:350px'>" + Messages.getString("ResourcePlan.ThresholdsTooltip") + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		builder.append(title, 13);
+		builder.nextLine();
+		thresholdRow(builder, "ResourcePlan.Shortage", shortageWarning, shortageLimit); //$NON-NLS-1$
+		thresholdRow(builder, "ResourcePlan.Surplus", surplusWarning, surplusLimit); //$NON-NLS-1$
+		return builder.getPanel();
+	}
+
+	private static void thresholdRow(DefaultFormBuilder builder, String key, JSpinner warning, JSpinner limit) {
+		builder.append(new JLabel(Messages.getString(key + "Label"))); //$NON-NLS-1$
+		builder.append(new JLabel(Messages.getString("ResourcePlan.WarningOver"))); //$NON-NLS-1$
+		builder.append(warning);
+		builder.append(new JLabel("%,")); //$NON-NLS-1$
+		builder.append(new JLabel(Messages.getString("ResourcePlan.LimitOver"))); //$NON-NLS-1$
+		builder.append(limit);
+		builder.append(new JLabel("%")); //$NON-NLS-1$
+		builder.nextLine();
 	}
 
 	private static JLabel help(String key) {
@@ -648,6 +756,9 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				case G_WBS: return amount(group.getWbsHours());
 				case G_EXTRA: return amount(group.getExtraHours());
 				case G_EFFORT: return amount(group.getEffortHours());
+				case G_HEADCOUNT: return people(group.getPeople());
+				case G_EXISTING: return people(group.getExistingPeople());
+				case G_NEW: return people(group.getNewPeople());
 				case G_OUTPUT: return amount(group.getCapacityHours());
 				case G_BALANCE: return balance(group.getCapacityHours() - group.getEffortHours());
 				case G_LOAD: return percent(group.getLoad());
@@ -674,26 +785,40 @@ public final class ResourcePlanDialog extends AbstractDialog {
 			}
 		};
 		NumberRenderer renderer = new NumberRenderer();
-		for (int column = G_TASKS; column < G_HEADERS.length; column++)
+		for (int column = G_HEADCOUNT; column < G_HEADERS.length; column++)
 			groupTable.getColumnModel().getColumn(column).setCellRenderer(renderer);
-		groupTable.getColumnModel().getColumn(G_BALANCE).setCellRenderer(new NumberRenderer() {
-			private static final long serialVersionUID = 1L;
-			protected boolean isAlert(int row) {
-				return groupBalance(row) < -1e-6;
-			}
-		});
-		groupTable.getColumnModel().getColumn(G_LOAD).setCellRenderer(new NumberRenderer() {
-			private static final long serialVersionUID = 1L;
-			protected boolean isAlert(int row) {
-				return groupBalance(row) < -1e-6;
-			}
-		});
+		groupTable.getColumnModel().getColumn(G_BALANCE).setCellRenderer(new BalanceRenderer());
+		groupTable.getColumnModel().getColumn(G_LOAD).setCellRenderer(new BalanceRenderer());
 		groupColumns = new ColumnSet(groupTable, G_HEADERS, HIDDEN_GROUP_COLUMNS, DEFAULT_HIDDEN_GROUP_COLUMNS);
 	}
 
 	/** The row after the groups, with the totals */
 	private boolean isTotalGroup(int row) {
 		return row >= plan.getGroups().size();
+	}
+
+	/**
+	 * How the capacity of a group meets its effort, see ResourcePlan.Group.getStatus(). For the total: the gap of all
+	 * the groups against the same thresholds
+	 */
+	private int groupStatus(int row) {
+		if (!isTotalGroup(row))
+			return plan.getGroups().get(row).getStatus();
+		double effort = 0, capacity = 0;
+		for (ResourcePlan.Group group : plan.getGroups()) {
+			effort += group.getEffortHours();
+			capacity += group.getCapacityHours();
+		}
+		if (effort <= 1e-9)
+			return ResourcePlan.Group.OK;
+		if (capacity <= 1e-9)
+			return ResourcePlan.Group.FAILED;
+		double gap = 100 - effort / capacity * 100; // from the load, like ResourcePlan.checkBalance()
+		if (gap < -options.getShortageLimit() || gap > options.getSurplusLimit())
+			return ResourcePlan.Group.FAILED;
+		if (gap < -options.getShortageWarning() || gap > options.getSurplusWarning())
+			return ResourcePlan.Group.WARNING;
+		return ResourcePlan.Group.OK;
 	}
 
 	/** Expected output less effort of a group, or of all for the total, man-hours. Negative: people are missing */
@@ -722,11 +847,19 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		case G_WBS: return amount(wbs);
 		case G_EXTRA: return amount(extra);
 		case G_EFFORT: return amount(effort);
+		case G_HEADCOUNT: return String.valueOf(plan.getTotalPeople());
+		case G_EXISTING: return String.valueOf(plan.getTotalPeople() - plan.getNewPeople());
+		case G_NEW: return String.valueOf(plan.getNewPeople());
 		case G_OUTPUT: return amount(output);
 		case G_BALANCE: return balance(output - effort);
 		case G_LOAD: return percent(output <= 1e-9 ? (effort > 1e-9 ? Double.POSITIVE_INFINITY : 0) : effort / output);
 		default: return ""; //$NON-NLS-1$
 		}
+	}
+
+	/** A number of people, which can have a part of a person shared with other skills. Empty for 0 */
+	private String people(double people) {
+		return Math.abs(people) < 1e-9 ? "" : decimal.format(people); //$NON-NLS-1$
 	}
 
 	/** Man-hours in the unit shown, with a + when there are more than needed */
@@ -871,12 +1004,23 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		JComboBox levelEditor = new JComboBox(LaborCatalog.allLevels());
 		levelEditor.setEditable(true);
 		lineTable.getColumnModel().getColumn(L_LEVEL).setCellEditor(new DefaultCellEditor(levelEditor));
-		JComboBox quantityEditor = new JComboBox(new Object[] { Messages.getString("ResourcePlan.Auto") }); //$NON-NLS-1$
+		// the usual quantities to pick, another one can be typed: the text is selected so that typing replaces it
+		JComboBox quantityEditor = new JComboBox(new Object[] { Messages.getString("ResourcePlan.Auto"), "1", "2", "3", "4", "5" }); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
 		quantityEditor.setEditable(true);
+		final Component quantityText = quantityEditor.getEditor().getEditorComponent();
+		quantityText.addFocusListener(new FocusAdapter() {
+			public void focusGained(FocusEvent e) {
+				if (quantityText instanceof JTextComponent)
+					((JTextComponent) quantityText).selectAll();
+			}
+		});
 		lineTable.getColumnModel().getColumn(L_QUANTITY).setCellEditor(new DefaultCellEditor(quantityEditor));
 		lineTable.getColumnModel().getColumn(L_FROM).setCellEditor(new DayEditor());
 		lineTable.getColumnModel().getColumn(L_TO).setCellEditor(new DayEditor());
 		lineTable.setRowHeight(Math.max(lineTable.getRowHeight(), roleEditor.getPreferredSize().height));
+		lineTable.setDragEnabled(true); // the lines are put in order by drag and drop, see LineMover
+		lineTable.setDropMode(DropMode.INSERT_ROWS);
+		lineTable.setTransferHandler(new LineMover());
 		NumberRenderer renderer = new NumberRenderer();
 		for (int column = L_ALLOCATION; column < L_HEADERS.length; column++)
 			lineTable.getColumnModel().getColumn(column).setCellRenderer(renderer);
@@ -1024,6 +1168,53 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		plan.getLines().add(line);
 		update();
 		lineTable.changeSelection(plan.getLines().size() - 1, L_LEVEL, false, false);
+	}
+
+	/**
+	 * Moves the lines dragged in the table of the people to where they are dropped, inside the table only. The total
+	 * stays the last row. The order is kept in the versions
+	 */
+	private class LineMover extends TransferHandler {
+		private static final long serialVersionUID = 1L;
+		private int[] dragged = null;
+
+		public int getSourceActions(JComponent c) {
+			return MOVE;
+		}
+		protected Transferable createTransferable(JComponent c) {
+			stopEditing();
+			dragged = selectedLines();
+			return dragged.length == 0 ? null : new StringSelection(""); //$NON-NLS-1$
+		}
+		public boolean canImport(TransferSupport support) {
+			return support.isDrop() && dragged != null && dragged.length > 0;
+		}
+		public boolean importData(TransferSupport support) {
+			if (!canImport(support))
+				return false;
+			int index = Math.max(0, Math.min(((JTable.DropLocation) support.getDropLocation()).getRow(), plan.getLines().size()));
+			final List<ResourcePlan.Line> moved = new ArrayList<ResourcePlan.Line>();
+			for (int row : dragged)
+				moved.add(plan.getLines().get(row));
+			for (int i = dragged.length - 1; i >= 0; i--) {
+				if (dragged[i] < index)
+					index--;
+				plan.getLines().remove(dragged[i]);
+			}
+			plan.getLines().addAll(index, moved);
+			dragged = null;
+			final int first = index;
+			SwingUtilities.invokeLater(new Runnable() {
+				public void run() {
+					update();
+					lineTable.getSelectionModel().setSelectionInterval(first, first + moved.size() - 1);
+				}
+			});
+			return true;
+		}
+		protected void exportDone(JComponent source, Transferable data, int action) {
+			dragged = null;
+		}
 	}
 
 	/** The selected lines get back the default period of their role */
@@ -1222,20 +1413,34 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		}
 	}
 
-	/** Right aligned, in red when isAlert() */
+	private static final Color WARNING_COLOR = new Color(0xb2, 0x6a, 0x00);
+
+	/** Right aligned, in the color of alertColor() */
 	private static class NumberRenderer extends DefaultTableCellRenderer {
 		private static final long serialVersionUID = 1L;
 		NumberRenderer() {
 			setHorizontalAlignment(SwingConstants.RIGHT);
 		}
-		protected boolean isAlert(int row) {
-			return false;
+		/** Color of the text of a row, null for the normal one */
+		protected Color alertColor(int row) {
+			return null;
 		}
 		public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
 			Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-			if (!isSelected)
-				c.setForeground(isAlert(row) ? Color.RED : table.getForeground());
+			if (!isSelected) {
+				Color color = alertColor(row);
+				c.setForeground(color == null ? table.getForeground() : color);
+			}
 			return c;
+		}
+	}
+
+	/** Renderer of the gap between capacity and effort: orange over a warning threshold, red over a limit */
+	private class BalanceRenderer extends NumberRenderer {
+		private static final long serialVersionUID = 1L;
+		protected Color alertColor(int row) {
+			int status = groupStatus(row);
+			return status == ResourcePlan.Group.FAILED ? Color.RED : status == ResourcePlan.Group.WARNING ? WARNING_COLOR : null;
 		}
 	}
 }

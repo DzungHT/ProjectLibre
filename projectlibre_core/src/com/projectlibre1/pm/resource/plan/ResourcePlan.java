@@ -112,6 +112,10 @@ public class ResourcePlan {
 		private double extraDays = 0;
 		private double capacityHours = 0;
 		private double people = 0;
+		private double existingPeople = 0; // the part of the people who are existing resources
+		/** How the capacity meets the effort, see checkBalance() */
+		public static final int OK = 0, WARNING = 1, FAILED = 2;
+		private int status = OK;
 
 		Group(String role, String skill) {
 			this.role = role;
@@ -134,6 +138,12 @@ public class ResourcePlan {
 		public double getCapacityHours() { return capacityHours; }
 		/** People of the lines, with a part of the people shared with other skills (Fullstack...) */
 		public double getPeople() { return people; }
+		/** People of the lines who are existing resources */
+		public double getExistingPeople() { return existingPeople; }
+		/** OK, WARNING or FAILED: the gap between capacity and effort against the thresholds of the options */
+		public int getStatus() { return status; }
+		/** People of the lines to add (TBD) */
+		public double getNewPeople() { return people - existingPeople; }
 		/** Effort / capacity, 0 if there is neither */
 		public double getLoad() {
 			if (capacityHours <= EPSILON)
@@ -519,11 +529,36 @@ public class ResourcePlan {
 		final List<String> roles = LaborCatalog.getInstance().getRoles();
 		Collections.sort(groups, new Comparator<Group>() {
 			public int compare(Group a, Group b) {
-				int ra = roles.indexOf(a.role), rb = roles.indexOf(b.role);
-				if (ra != rb)
-					return (ra < 0 ? Integer.MAX_VALUE : ra) < (rb < 0 ? Integer.MAX_VALUE : rb) ? -1 : 1;
-				int c = a.role.compareToIgnoreCase(b.role);
-				return c != 0 ? c : a.skill.compareToIgnoreCase(b.skill);
+				return compareRoles(roles, a.role, a.skill, b.role, b.skill);
+			}
+		});
+	}
+
+	/** By role in the order of the catalog (roles not in it at the end), then by skill */
+	private static int compareRoles(List<String> roles, String roleA, String skillA, String roleB, String skillB) {
+		int ra = roles.indexOf(roleA), rb = roles.indexOf(roleB);
+		if (ra != rb)
+			return (ra < 0 ? Integer.MAX_VALUE : ra) < (rb < 0 ? Integer.MAX_VALUE : rb) ? -1 : 1;
+		int c = roleA.compareToIgnoreCase(roleB);
+		return c != 0 ? c : skillA.compareToIgnoreCase(skillB);
+	}
+
+	/**
+	 * The default order of the lines: the existing resources first, then by role (in the order of the catalog), skill,
+	 * level from the highest, and start. The user can change the order, it is kept in the versions
+	 */
+	public void sortLines() {
+		final List<String> roles = LaborCatalog.getInstance().getRoles();
+		Collections.sort(lines, new Comparator<Line>() {
+			public int compare(Line a, Line b) {
+				if (a.existing != b.existing)
+					return a.existing ? -1 : 1;
+				int c = compareRoles(roles, a.role, a.skill, b.role, b.skill);
+				if (c != 0)
+					return c;
+				if (a.level != b.level)
+					return a.level > b.level ? -1 : 1;
+				return a.from < b.from ? -1 : a.from > b.from ? 1 : 0;
 			}
 		});
 	}
@@ -705,6 +740,7 @@ public class ResourcePlan {
 		for (Group group : groups) {
 			group.capacityHours = 0;
 			group.people = 0;
+			group.existingPeople = 0;
 		}
 		for (Line line : lines) {
 			if (!line.customDates) {
@@ -732,6 +768,8 @@ public class ResourcePlan {
 			if (!line.auto && group != null) {
 				group.capacityHours += line.people * line.perPerson;
 				group.people += line.people;
+				if (line.existing)
+					group.existingPeople += line.people;
 			}
 		}
 		for (Line line : lines)
@@ -753,13 +791,14 @@ public class ResourcePlan {
 					errors.add(MessageFormat.format(Messages.getString("ResourcePlan.NoCapacity"), lineName(auto))); //$NON-NLS-1$
 				else {
 					auto.fte = missing / auto.perPerson;
-					auto.people = (int) Math.ceil(auto.fte - EPSILON);
+					// the fewest people giving a load not over 100% + the shortage accepted without a warning
+					double needed = group.getEffortHours() / (1 + options.getShortageWarning() / 100.0) - group.capacityHours;
+					auto.people = needed <= EPSILON ? 0 : (int) Math.ceil(needed / auto.perPerson - EPSILON);
 					group.capacityHours += auto.people * auto.perPerson;
 					group.people += auto.people;
 				}
-			} else if (missing > EPSILON)
-				errors.add(MessageFormat.format(Messages.getString("ResourcePlan.Missing"), group.getKey(), //$NON-NLS-1$
-						format(missing / NormalTask.HOURS_PER_MAN_DAY)));
+			}
+			checkBalance(group);
 			if (group.people > options.getMaxPeople() + EPSILON)
 				errors.add(MessageFormat.format(Messages.getString("ResourcePlan.TooManyPeople"), group.getKey(), //$NON-NLS-1$
 						format(group.people), String.valueOf(options.getMaxPeople())));
@@ -768,6 +807,50 @@ public class ResourcePlan {
 			if (line.auto && exactGroup(line) == null)
 				warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.AutoShared"), lineName(line))); //$NON-NLS-1$
 		calculateEarliestEnd();
+	}
+
+	/**
+	 * Compares the load of a group (effort / capacity) to the thresholds of the options: a load of 117% is a shortage of
+	 * 17%, a load of 80% a surplus of 20%. Within the warnings the gap is accepted, over a limit the plan fails. A surplus of a single person is only a warning: there
+	 * cannot be less than one person, but the % workload can be lowered
+	 */
+	private void checkBalance(Group group) {
+		group.status = Group.OK;
+		double effort = group.getEffortHours(), capacity = group.capacityHours;
+		if (effort <= EPSILON) {
+			if (capacity > EPSILON) {
+				group.status = Group.WARNING;
+				warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.NoEffort"), group.getKey())); //$NON-NLS-1$
+			}
+			return;
+		}
+		double load = capacity <= EPSILON ? Double.POSITIVE_INFINITY : effort / capacity * 100;
+		double gap = 100 - load; // negative: shortage
+		String percent = Double.isInfinite(gap) ? "221e" : String.valueOf(Math.round(Math.abs(gap))); //$NON-NLS-1$
+		if (gap < 0) {
+			if (-gap > options.getShortageLimit() + EPSILON) {
+				group.status = Group.FAILED;
+				errors.add(MessageFormat.format(Messages.getString("ResourcePlan.Shortage"), group.getKey(), percent, //$NON-NLS-1$
+						String.valueOf(options.getShortageLimit())));
+			} else if (-gap > options.getShortageWarning() + EPSILON) {
+				group.status = Group.WARNING;
+				warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.ShortageWarning"), group.getKey(), percent, //$NON-NLS-1$
+						String.valueOf(options.getShortageWarning())));
+			}
+		} else if (gap > options.getSurplusLimit() + EPSILON) {
+			if (group.people <= 1 + EPSILON) {
+				group.status = Group.WARNING;
+				warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.SurplusOnePerson"), group.getKey(), percent)); //$NON-NLS-1$
+			} else {
+				group.status = Group.FAILED;
+				errors.add(MessageFormat.format(Messages.getString("ResourcePlan.Surplus"), group.getKey(), percent, //$NON-NLS-1$
+						String.valueOf(options.getSurplusLimit())));
+			}
+		} else if (gap > options.getSurplusWarning() + EPSILON) {
+			group.status = Group.WARNING;
+			warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.SurplusWarning"), group.getKey(), percent, //$NON-NLS-1$
+					String.valueOf(options.getSurplusWarning())));
+		}
 	}
 
 	/** Group of the role and skill of a line, null if the line can do the tasks of several groups (or none) */
@@ -804,6 +887,8 @@ public class ResourcePlan {
 			double part = missing <= EPSILON ? 1.0 / covered.size() : Math.max(0, group.getEffortHours() - group.capacityHours) / missing;
 			group.capacityHours += capacity * part;
 			group.people += line.people * part;
+			if (line.existing)
+				group.existingPeople += line.people * part;
 		}
 	}
 

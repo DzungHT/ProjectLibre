@@ -81,9 +81,12 @@ public class ResourcePlanOptions {
 	public static final int DEFAULT_TEST_TAIL = 10;
 	public static final int DEFAULT_BA_TAIL = 20;
 	public static final int DEFAULT_MAX_PEOPLE = 20;
+	/** Gaps between capacity and effort, % of the effort: up to the warning they are accepted, over the limit the plan fails */
+	public static final int DEFAULT_SHORTAGE_WARNING = 5, DEFAULT_SHORTAGE_LIMIT = 15, DEFAULT_SURPLUS_WARNING = 20, DEFAULT_SURPLUS_LIMIT = 50;
 
 	private static final String START = "start", DEADLINE = "deadline", BUFFER = "buffer", UTILIZATION = "utilization", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 			DEV_LAG = "devLag", TESTER_LAG = "testerLag", TEST_TAIL = "testTail", BA_TAIL = "baTail", MAX_PEOPLE = "maxPeople", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+			SHORTAGE_WARNING = "shortageWarning", SHORTAGE_LIMIT = "shortageLimit", SURPLUS_WARNING = "surplusWarning", SURPLUS_LIMIT = "surplusLimit", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 			EXTRA = "extra.", AUTO = "auto."; //$NON-NLS-1$ //$NON-NLS-2$
 	private static final String PREFERENCE_PREFIX = "resourcePlan."; //$NON-NLS-1$
 
@@ -93,6 +96,7 @@ public class ResourcePlanOptions {
 	private double utilization;
 	private int devLag, testerLag, testTail, baTail;
 	private int maxPeople;
+	private int shortageWarning, shortageLimit, surplusWarning, surplusLimit;
 	/** Effort added to the WBS, man-days, by key of group (see ResourcePlan.key()) */
 	private final Map<String, Double> extraDays = new LinkedHashMap<String, Double>();
 	/** Lines whose quantity is calculated, by role, skill and level (see ResourcePlan.lineKey()), to read them again as auto */
@@ -111,6 +115,10 @@ public class ResourcePlanOptions {
 		testTail = DEFAULT_TEST_TAIL;
 		baTail = DEFAULT_BA_TAIL;
 		maxPeople = DEFAULT_MAX_PEOPLE;
+		shortageWarning = DEFAULT_SHORTAGE_WARNING;
+		shortageLimit = DEFAULT_SHORTAGE_LIMIT;
+		surplusWarning = DEFAULT_SURPLUS_WARNING;
+		surplusLimit = DEFAULT_SURPLUS_LIMIT;
 	}
 
 	/** The options saved in the project, or the ones last used if there are none */
@@ -168,6 +176,10 @@ public class ResourcePlanOptions {
 		testTail = (int) longValue(p, TEST_TAIL, testTail);
 		baTail = (int) longValue(p, BA_TAIL, baTail);
 		maxPeople = (int) longValue(p, MAX_PEOPLE, maxPeople);
+		shortageWarning = (int) longValue(p, SHORTAGE_WARNING, shortageWarning);
+		shortageLimit = (int) longValue(p, SHORTAGE_LIMIT, shortageLimit);
+		surplusWarning = (int) longValue(p, SURPLUS_WARNING, surplusWarning);
+		surplusLimit = (int) longValue(p, SURPLUS_LIMIT, surplusLimit);
 		extraDays.clear();
 		autoLines.clear();
 		for (String name : p.stringPropertyNames())
@@ -194,6 +206,10 @@ public class ResourcePlanOptions {
 		p.setProperty(TEST_TAIL, String.valueOf(testTail));
 		p.setProperty(BA_TAIL, String.valueOf(baTail));
 		p.setProperty(MAX_PEOPLE, String.valueOf(maxPeople));
+		p.setProperty(SHORTAGE_WARNING, String.valueOf(shortageWarning));
+		p.setProperty(SHORTAGE_LIMIT, String.valueOf(shortageLimit));
+		p.setProperty(SURPLUS_WARNING, String.valueOf(surplusWarning));
+		p.setProperty(SURPLUS_LIMIT, String.valueOf(surplusLimit));
 	}
 
 	private void readPreferences() {
@@ -269,6 +285,18 @@ public class ResourcePlanOptions {
 	/** Most people of a role and skill, more is shown as an issue */
 	public int getMaxPeople() { return maxPeople; }
 	public void setMaxPeople(int maxPeople) { this.maxPeople = Math.max(1, maxPeople); }
+	/** Capacity under the effort accepted without a warning, % of the effort */
+	public int getShortageWarning() { return shortageWarning; }
+	public void setShortageWarning(int shortageWarning) { this.shortageWarning = Math.max(0, shortageWarning); }
+	/** Capacity under the effort over which the plan fails, % of the effort. Not under the warning */
+	public int getShortageLimit() { return Math.max(shortageLimit, shortageWarning); }
+	public void setShortageLimit(int shortageLimit) { this.shortageLimit = Math.max(0, shortageLimit); }
+	/** Capacity over the effort accepted without a warning, % of the effort */
+	public int getSurplusWarning() { return surplusWarning; }
+	public void setSurplusWarning(int surplusWarning) { this.surplusWarning = Math.max(0, surplusWarning); }
+	/** Capacity over the effort over which the plan fails, % of the effort. Not under the warning */
+	public int getSurplusLimit() { return Math.max(surplusLimit, surplusWarning); }
+	public void setSurplusLimit(int surplusLimit) { this.surplusLimit = Math.max(0, surplusLimit); }
 
 	/** Effort added to the WBS for a group, man-days */
 	public double getExtraDays(String key) {

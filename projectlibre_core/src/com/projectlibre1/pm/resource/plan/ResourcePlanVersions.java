@@ -71,7 +71,7 @@ import com.projectlibre1.pm.task.Project;
  * The list also remembers the version last applied and the one last opened.
  */
 public class ResourcePlanVersions {
-	private static final String COUNT = "count", APPLIED = "applied", LAST = "last", VERSION = "version.", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+	private static final String COUNT = "count", APPLIED = "applied", APPLIED_SNAPSHOT = "appliedSnapshot", LAST = "last", VERSION = "version.", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
 			NAME = ".name", SAVED = ".saved", SNAPSHOT = ".snapshot"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 
 	public static class Version {
@@ -94,6 +94,7 @@ public class ResourcePlanVersions {
 
 	private final List<Version> versions = new ArrayList<Version>();
 	private String applied = null;
+	private String appliedSnapshot = null; // the plan of the version when it was applied
 	private String last = null;
 
 	/** The versions of a project, none if it has never had one */
@@ -124,6 +125,7 @@ public class ResourcePlanVersions {
 			list.versions.add(new Version(name, saved, p.getProperty(VERSION + i + SNAPSHOT, ""))); //$NON-NLS-1$
 		}
 		list.applied = p.getProperty(APPLIED);
+		list.appliedSnapshot = p.getProperty(APPLIED_SNAPSHOT);
 		list.last = p.getProperty(LAST);
 		return list;
 	}
@@ -140,6 +142,8 @@ public class ResourcePlanVersions {
 		}
 		if (applied != null)
 			p.setProperty(APPLIED, applied);
+		if (appliedSnapshot != null)
+			p.setProperty(APPLIED_SNAPSHOT, appliedSnapshot);
 		if (last != null)
 			p.setProperty(LAST, last);
 		StringWriter writer = new StringWriter();
@@ -186,15 +190,25 @@ public class ResourcePlanVersions {
 
 	public void remove(Version version) {
 		versions.remove(version);
-		if (version.name.equals(applied))
+		if (version.name.equals(applied)) {
 			applied = null;
+			appliedSnapshot = null;
+		}
 		if (version.name.equals(last))
 			last = null;
 	}
 
-	/** Name of the version last applied to the resources, null if none or if the plan applied was not saved */
+	/** Name of the version last applied to the resources, null if none or if the plan applied was not a version */
 	public String getApplied() { return applied; }
-	public void setApplied(String applied) { this.applied = applied; }
+	/** Remembers the version applied and its plan then, see isApplied(). Null when the plan applied was not a version */
+	public void setApplied(Version version) {
+		applied = version == null ? null : version.name;
+		appliedSnapshot = version == null ? null : version.snapshot;
+	}
+	/** True if the version is the one applied and has not been changed since */
+	public boolean isApplied(Version version) {
+		return version != null && version.name.equals(applied) && version.snapshot.equals(appliedSnapshot);
+	}
 	/** Name of the version last opened, to open it again; null for the plan of the resources */
 	public String getLast() { return last; }
 	public void setLast(String last) { this.last = last; }
