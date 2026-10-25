@@ -57,13 +57,18 @@ package com.projectlibre1.pm.resource.plan;
 
 import java.text.MessageFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
+import java.util.TreeMap;
 
 import com.projectlibre1.datatype.Duration;
 import com.projectlibre1.options.CalendarOption;
@@ -255,6 +260,178 @@ public class ResourcePlan {
 		plan.readResources();
 		plan.calculate();
 		return plan;
+	}
+
+	/**
+	 * The plan of a version, see snapshot(): its options and its TBD lines. The existing resources are read from the
+	 * project, with the dates and % the version changed. The TBD resources of the project are given to the TBD lines of
+	 * the same role, skill and level, so that the ones with assignments are kept when the version is applied
+	 */
+	public static ResourcePlan create(Project project, String snapshot) {
+		Map<String, String> values = parse(snapshot);
+		Properties properties = new Properties();
+		for (Map.Entry<String, String> entry : values.entrySet())
+			if (entry.getKey().startsWith(OPTION))
+				properties.setProperty(entry.getKey().substring(OPTION.length()), entry.getValue());
+		ResourcePlan plan = new ResourcePlan(project, ResourcePlanOptions.fromProperties(properties));
+		plan.readTasks();
+		plan.readExtraEffort();
+		plan.calculateDates();
+		plan.readResources();
+		plan.restoreLines(values);
+		plan.calculate();
+		return plan;
+	}
+
+	private static final String OPTION = "option.", LINE = "line."; //$NON-NLS-1$ //$NON-NLS-2$
+
+	/**
+	 * Text of the plan to keep it as a version: its options and its lines, one "key=value" per line, sorted, so that
+	 * two snapshots of the same plan are equal
+	 */
+	public String snapshot() {
+		Map<String, String> values = new TreeMap<String, String>();
+		Properties properties = options.toProperties();
+		for (String name : properties.stringPropertyNames())
+			values.put(OPTION + name, properties.getProperty(name));
+		for (int i = 0; i < lines.size(); i++) {
+			Line line = lines.get(i);
+			String prefix = LINE + String.format("%03d", i) + "."; //$NON-NLS-1$ //$NON-NLS-2$
+			values.put(prefix + "role", line.role); //$NON-NLS-1$
+			values.put(prefix + "skill", line.skill); //$NON-NLS-1$
+			values.put(prefix + "level", String.valueOf(line.level)); //$NON-NLS-1$
+			values.put(prefix + "existing", String.valueOf(line.existing)); //$NON-NLS-1$
+			values.put(prefix + "allocation", String.valueOf(line.allocation)); //$NON-NLS-1$
+			values.put(prefix + "quantity", String.valueOf(line.quantity)); //$NON-NLS-1$
+			values.put(prefix + "auto", String.valueOf(line.auto)); //$NON-NLS-1$
+			values.put(prefix + "customDates", String.valueOf(line.customDates)); //$NON-NLS-1$
+			values.put(prefix + "edited", String.valueOf(line.edited)); //$NON-NLS-1$
+			values.put(prefix + "openFrom", String.valueOf(line.openFrom)); //$NON-NLS-1$
+			values.put(prefix + "openTo", String.valueOf(line.openTo)); //$NON-NLS-1$
+			if (line.customDates) {
+				values.put(prefix + "from", String.valueOf(line.from)); //$NON-NLS-1$
+				values.put(prefix + "to", String.valueOf(line.to)); //$NON-NLS-1$
+			}
+			if (line.existing) {
+				StringBuilder ids = new StringBuilder();
+				for (ResourceImpl resource : line.resources)
+					ids.append(ids.length() == 0 ? "" : ",").append(resource.getUniqueId()); //$NON-NLS-1$ //$NON-NLS-2$
+				values.put(prefix + "resources", ids.toString()); //$NON-NLS-1$
+			}
+		}
+		StringBuilder text = new StringBuilder();
+		for (Map.Entry<String, String> entry : values.entrySet())
+			text.append(entry.getKey()).append('=').append(entry.getValue().replace('\n', ' ')).append('\n');
+		return text.toString();
+	}
+
+	private static Map<String, String> parse(String snapshot) {
+		Map<String, String> values = new TreeMap<String, String>();
+		if (snapshot != null)
+			for (String line : snapshot.split("\n")) { //$NON-NLS-1$
+				int equal = line.indexOf('=');
+				if (equal > 0)
+					values.put(line.substring(0, equal), line.substring(equal + 1).trim());
+			}
+		return values;
+	}
+
+	/** Replaces the lines read from the resources with the ones of a version, see create(Project, String) */
+	private void restoreLines(Map<String, String> values) {
+		List<Line> existing = new ArrayList<Line>();
+		List<ResourceImpl> tbd = new ArrayList<ResourceImpl>();
+		for (Line line : lines)
+			if (line.existing)
+				existing.add(line);
+			else
+				tbd.addAll(line.resources);
+		lines.clear();
+		lines.addAll(existing);
+		Map<String, Map<String, String>> saved = new TreeMap<String, Map<String, String>>();
+		for (Map.Entry<String, String> entry : values.entrySet()) {
+			if (!entry.getKey().startsWith(LINE))
+				continue;
+			String rest = entry.getKey().substring(LINE.length());
+			int dot = rest.indexOf('.');
+			if (dot < 0)
+				continue;
+			Map<String, String> fields = saved.get(rest.substring(0, dot));
+			if (fields == null)
+				saved.put(rest.substring(0, dot), fields = new HashMap<String, String>());
+			fields.put(rest.substring(dot + 1), entry.getValue());
+		}
+		for (Map<String, String> fields : saved.values()) {
+			Line line;
+			if (Boolean.parseBoolean(fields.get("existing"))) { //$NON-NLS-1$
+				line = findExisting(existing, fields.get("resources")); //$NON-NLS-1$
+				if (line == null)
+					continue; // its resources are no longer in the project
+			} else {
+				line = new Line(fields.get("role"), intValue(fields.get("level"), -1), false); //$NON-NLS-1$ //$NON-NLS-2$
+				line.skill = fields.get("skill") == null ? "" : fields.get("skill"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				line.quantity = intValue(fields.get("quantity"), 0); //$NON-NLS-1$
+				line.auto = Boolean.parseBoolean(fields.get("auto")); //$NON-NLS-1$
+				lines.add(line);
+			}
+			line.allocation = doubleValue(fields.get("allocation"), line.allocation); //$NON-NLS-1$
+			line.customDates = Boolean.parseBoolean(fields.get("customDates")); //$NON-NLS-1$
+			line.edited = Boolean.parseBoolean(fields.get("edited")); //$NON-NLS-1$
+			line.openFrom = Boolean.parseBoolean(fields.get("openFrom")); //$NON-NLS-1$
+			line.openTo = Boolean.parseBoolean(fields.get("openTo")); //$NON-NLS-1$
+			if (line.customDates) {
+				line.from = longValue(fields.get("from"), line.from); //$NON-NLS-1$
+				line.to = longValue(fields.get("to"), line.to); //$NON-NLS-1$
+			}
+		}
+		// the TBD resources already in the project go to the lines like them
+		for (ResourceImpl resource : tbd) {
+			int level = LaborCatalog.parseLevel(resource.getLaborLevel());
+			String skill = resource.getSkills() == null ? "" : resource.getSkills(); //$NON-NLS-1$
+			for (Line line : lines)
+				if (!line.existing && line.role.equals(resource.getLaborRole()) && line.skill.equals(skill) && line.level == level) {
+					line.resources.add(resource);
+					break;
+				}
+		}
+	}
+
+	/** The existing line of exactly these resources (unique ids separated by commas), null if there is none */
+	private static Line findExisting(List<Line> existing, String ids) {
+		if (ids == null)
+			return null;
+		Set<String> wanted = new HashSet<String>(Arrays.asList(ids.split(","))); //$NON-NLS-1$
+		for (Line line : existing) {
+			Set<String> have = new HashSet<String>();
+			for (ResourceImpl resource : line.resources)
+				have.add(String.valueOf(resource.getUniqueId()));
+			if (have.equals(wanted))
+				return line;
+		}
+		return null;
+	}
+
+	private static int intValue(String text, int value) {
+		try {
+			return text == null ? value : Integer.parseInt(text.trim());
+		} catch (NumberFormatException e) {
+			return value;
+		}
+	}
+
+	private static long longValue(String text, long value) {
+		try {
+			return text == null ? value : Long.parseLong(text.trim());
+		} catch (NumberFormatException e) {
+			return value;
+		}
+	}
+
+	private static double doubleValue(String text, double value) {
+		try {
+			return text == null ? value : Double.parseDouble(text.trim());
+		} catch (NumberFormatException e) {
+			return value;
+		}
 	}
 
 	public static String key(String role, String skill) {

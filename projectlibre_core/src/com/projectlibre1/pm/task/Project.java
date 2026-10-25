@@ -236,6 +236,16 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 		this.resourcePlanSettings = resourcePlanSettings;
 	}
 
+	/** Versions of the Resource Plan saved before being applied, see ResourcePlanVersions. Null if never saved */
+	private String resourcePlanVersions = null;
+
+	public String getResourcePlanVersions() {
+		return resourcePlanVersions;
+	}
+	public void setResourcePlanVersions(String resourcePlanVersions) {
+		this.resourcePlanVersions = resourcePlanVersions;
+	}
+
 	public NodeModel getTaskModel() {
 		if (taskModel == null)
 			taskModel=NodeModelFactory.createTaskModel(this);

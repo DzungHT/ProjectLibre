@@ -133,6 +133,20 @@ hạn dưới.
 
 Nhờ vậy biểu đồ resource của ProjectLibre, bước 2 (Assignment) và báo cáo đều dùng thẳng các resource này.
 
+### 5.1 Phiên bản kế hoạch
+
+Kế hoạch thường phải sửa nhiều lần trước khi chốt, nên có thể **lưu thành phiên bản** mà chưa áp dụng:
+
+- Phiên bản lưu trong file dự án (`Project.resourcePlanVersions`), gồm: thông số, effort thêm, các dòng nhân sự
+  (cả dòng Auto) và ngày/% đã sửa của resource có sẵn (theo unique id). **Lưu không thay đổi resource.**
+- Thanh *Phiên bản* trên cùng hộp thoại: chọn *(Theo resource hiện tại)* hoặc một phiên bản; Lưu, Lưu thành...,
+  Đổi tên..., Xoá; trạng thái: lưu lúc nào, đã áp dụng, có thay đổi chưa lưu.
+- **Áp dụng** ghi phiên bản đang xem vào resource (như mục 5), tự lưu thay đổi vào phiên bản và đánh dấu
+  *đã áp dụng*. **Đóng** không đụng resource; nếu có thay đổi chưa lưu thì hỏi lưu.
+- Mở lại hộp thoại: mở phiên bản đang làm dở gần nhất.
+- Mở một phiên bản: resource có sẵn đọc lại từ dự án (áp ngày/% của phiên bản); dòng TBD lấy từ phiên bản, các
+  resource TBD hiện có được gắn vào dòng cùng role/kỹ năng/level để giữ resource đã có phân công khi áp dụng.
+
 ## 6. Giao diện: hộp thoại *Resource Plan*
 
 Ribbon HTD Planner, nhóm **Planning**, một vùng mới (sau Baseline) với nút **Resource Plan**.

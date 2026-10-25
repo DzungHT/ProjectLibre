@@ -143,6 +143,21 @@ public class ResourcePlanOptions {
 		writePreferences();
 	}
 
+	/** All the options, to keep them in a version of the plan, see ResourcePlan.snapshot() */
+	Properties toProperties() {
+		Properties properties = new Properties();
+		write(properties, true);
+		return properties;
+	}
+
+	/** The options of a version of the plan. The ones it does not have are the ones last used */
+	static ResourcePlanOptions fromProperties(Properties properties) {
+		ResourcePlanOptions options = new ResourcePlanOptions();
+		options.readPreferences();
+		options.read(properties);
+		return options;
+	}
+
 	private void read(Properties p) {
 		start = longValue(p, START, start);
 		deadline = longValue(p, DEADLINE, deadline);

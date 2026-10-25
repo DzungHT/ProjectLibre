@@ -78,11 +78,14 @@ import java.util.prefs.Preferences;
 import javax.swing.AbstractCellEditor;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultCellEditor;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
@@ -112,10 +115,10 @@ import com.projectlibre1.pm.resource.labor.LaborCatalog;
 import com.projectlibre1.pm.resource.labor.SkillCatalog;
 import com.projectlibre1.pm.resource.plan.ResourcePlan;
 import com.projectlibre1.pm.resource.plan.ResourcePlanOptions;
+import com.projectlibre1.pm.resource.plan.ResourcePlanVersions;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.strings.Messages;
-import com.projectlibre1.util.Alert;
 import com.projectlibre1.util.DateTime;
 
 /**
@@ -145,8 +148,16 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	private static final int DEFAULT_UNIT = 1;
 
 	private static final long DAY = 24L * 60 * 60 * 1000;
-	private final ResourcePlanOptions options;
-	private final ResourcePlan plan;
+	private final Project project;
+	private ResourcePlanOptions options;
+	private ResourcePlan plan;
+	/** The versions of the plan, the one shown (null: the plan of the resources) and its snapshot when it was loaded or saved */
+	private final ResourcePlanVersions versions;
+	private ResourcePlanVersions.Version version = null;
+	private String savedSnapshot = null;
+	private JComboBox versionChoice;
+	private JLabel versionStatus;
+	private boolean choosingVersion = false;
 	private final DateFormat dateFormat = EditOption.getInstance().getShortDateFormat();
 	private final NumberFormat decimal = NumberFormat.getNumberInstance();
 	private final NumberFormat money = NumberFormat.getIntegerInstance();
@@ -170,8 +181,11 @@ public final class ResourcePlanDialog extends AbstractDialog {
 
 	private ResourcePlanDialog(Project project) {
 		super(GraphicManager.getFrameInstance(), Messages.getString("ResourcePlan.Title"), true); //$NON-NLS-1$
-		this.options = ResourcePlanOptions.load(project);
-		this.plan = ResourcePlan.create(project, options);
+		this.project = project;
+		versions = ResourcePlanVersions.load(project);
+		version = versions.find(versions.getLast()); // the version the user was working on
+		plan = version == null ? ResourcePlan.create(project, ResourcePlanOptions.load(project)) : ResourcePlan.create(project, version.getSnapshot());
+		options = plan.getOptions();
 		decimal.setMaximumFractionDigits(1);
 		decimal.setMinimumFractionDigits(0);
 
@@ -264,6 +278,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		groupModel.fireTableDataChanged();
 		lineModel.fireTableDataChanged();
 		showVerdict();
+		showVersionStatus();
 	}
 
 	/** Calculates once the table has ended the edit that calls it: ending the edit again would call it again */
@@ -286,9 +301,231 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		if (get)
 			return true;
 		update();
-		if (!plan.isFeasible() && !Alert.okCancel(Messages.getString("ResourcePlan.ApplyAnyway"))) //$NON-NLS-1$
+		if (!plan.isFeasible() && JOptionPane.showConfirmDialog(this, Messages.getString("ResourcePlan.ApplyAnyway"), getTitle(), //$NON-NLS-1$
+				JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
 			return false;
+		if (version != null && isChanged()) // the plan applied is the one of the version
+			saveVersion(version.getName());
+		versions.setApplied(version == null ? null : version.getName());
+		versions.setLast(version == null ? null : version.getName());
+		versions.save(project);
 		return true;
+	}
+
+	/** Apply writes the plan in the resources, Close keeps them as they are */
+	protected void createOkCancelButtons() {
+		createOkCancelButtons(Messages.getString("ResourcePlan.Apply"), Messages.getString("ButtonText.Close")); //$NON-NLS-1$ //$NON-NLS-2$
+		ok.setToolTipText(Messages.getString("ResourcePlan.ApplyTooltip")); //$NON-NLS-1$
+	}
+
+	/** Closes without changing the resources, after asking to save the changes in a version */
+	protected void onCancel() {
+		if (!askToSave())
+			return;
+		versions.setLast(version == null ? null : version.getName());
+		versions.save(project);
+		super.onCancel();
+	}
+
+	/** True if the plan changed since it was loaded or saved */
+	private boolean isChanged() {
+		return savedSnapshot != null && !savedSnapshot.equals(plan.snapshot());
+	}
+
+	/** Asks to save the changes, if there are some. False if the user cancels */
+	private boolean askToSave() {
+		stopEditing();
+		if (!isChanged())
+			return true;
+		int answer = JOptionPane.showConfirmDialog(this, Messages.getString("ResourcePlan.SaveChanges"), getTitle(), //$NON-NLS-1$
+				JOptionPane.YES_NO_CANCEL_OPTION);
+		if (answer == JOptionPane.YES_OPTION)
+			return version != null ? saveVersion(version.getName()) : saveVersionAs();
+		return answer == JOptionPane.NO_OPTION;
+	}
+
+	/** The bar of the versions: the version shown, save, save as, rename, delete, and its state */
+	private JComponent versionBar() {
+		versionChoice = new JComboBox();
+		versionChoice.setToolTipText(Messages.getString("ResourcePlan.VersionTooltip")); //$NON-NLS-1$
+		versionChoice.setRenderer(new DefaultListCellRenderer() {
+			private static final long serialVersionUID = 1L;
+			public Component getListCellRendererComponent(JList list, Object value, int index, boolean isSelected, boolean hasFocus) {
+				String text = value instanceof ResourcePlanVersions.Version ? ((ResourcePlanVersions.Version) value).getName()
+						: Messages.getString("ResourcePlan.ResourcesPlan"); //$NON-NLS-1$
+				if (value instanceof ResourcePlanVersions.Version && text.equals(versions.getApplied()))
+					text += " (" + Messages.getString("ResourcePlan.AppliedMark") + ")"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				return super.getListCellRendererComponent(list, text, index, isSelected, hasFocus);
+			}
+		});
+		fillVersionChoice();
+		versionChoice.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				if (choosingVersion)
+					return;
+				Object selected = versionChoice.getSelectedItem();
+				ResourcePlanVersions.Version chosen = selected instanceof ResourcePlanVersions.Version ? (ResourcePlanVersions.Version) selected : null;
+				if (chosen == version)
+					return;
+				if (askToSave())
+					loadVersion(chosen);
+				else
+					fillVersionChoice(); // back to the version shown
+			}
+		});
+		JButton save = button("ResourcePlan.Save", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				if (version == null)
+					saveVersionAs();
+				else
+					saveVersion(version.getName());
+			}
+		});
+		JButton saveAs = button("ResourcePlan.SaveAs", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				saveVersionAs();
+			}
+		});
+		JButton rename = button("ResourcePlan.RenameVersion", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				renameVersion();
+			}
+		});
+		JButton delete = button("ResourcePlan.DeleteVersion", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				deleteVersion();
+			}
+		});
+		versionStatus = new JLabel();
+		JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		panel.add(new JLabel(Messages.getString("ResourcePlan.Version"))); //$NON-NLS-1$
+		panel.add(versionChoice);
+		panel.add(save);
+		panel.add(saveAs);
+		panel.add(rename);
+		panel.add(delete);
+		panel.add(versionStatus);
+		return panel;
+	}
+
+	private static JButton button(String key, ActionListener listener) {
+		JButton button = new JButton(Messages.getString(key));
+		button.setToolTipText(Messages.getString(key + "Tooltip")); //$NON-NLS-1$
+		button.addActionListener(listener);
+		return button;
+	}
+
+	/** The plan of the resources, then the versions, with the one shown selected */
+	private void fillVersionChoice() {
+		choosingVersion = true;
+		try {
+			versionChoice.removeAllItems();
+			versionChoice.addItem(Messages.getString("ResourcePlan.ResourcesPlan")); //$NON-NLS-1$
+			for (ResourcePlanVersions.Version v : versions.getVersions())
+				versionChoice.addItem(v);
+			if (version == null)
+				versionChoice.setSelectedIndex(0);
+			else
+				versionChoice.setSelectedItem(version);
+		} finally {
+			choosingVersion = false;
+		}
+	}
+
+	/** Shows a version, or the plan of the resources for null */
+	private void loadVersion(ResourcePlanVersions.Version chosen) {
+		stopEditing();
+		version = chosen;
+		plan = chosen == null ? ResourcePlan.create(project, ResourcePlanOptions.load(project)) : ResourcePlan.create(project, chosen.getSnapshot());
+		options = plan.getOptions();
+		showParameters();
+		update();
+		savedSnapshot = plan.snapshot();
+		versions.setLast(chosen == null ? null : chosen.getName());
+		fillVersionChoice();
+		showVersionStatus();
+	}
+
+	/** Saves the plan in the version of this name. The resources are not changed */
+	private boolean saveVersion(String name) {
+		stopEditing();
+		update();
+		String snapshot = plan.snapshot();
+		version = versions.put(name, snapshot);
+		versions.setLast(version.getName());
+		versions.save(project);
+		savedSnapshot = snapshot;
+		fillVersionChoice();
+		showVersionStatus();
+		return true;
+	}
+
+	/** Saves the plan in a new version, or in one chosen by its name. False if cancelled */
+	private boolean saveVersionAs() {
+		String name = askVersionName(MessageFormat.format(Messages.getString("ResourcePlan.NewVersionName"), String.valueOf(versions.getVersions().size() + 1))); //$NON-NLS-1$
+		if (name == null)
+			return false;
+		ResourcePlanVersions.Version existing = versions.find(name);
+		if (existing != null && existing != version && JOptionPane.showConfirmDialog(this,
+				MessageFormat.format(Messages.getString("ResourcePlan.VersionExists"), existing.getName()), getTitle(), //$NON-NLS-1$
+				JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+			return false;
+		return saveVersion(name);
+	}
+
+	/** A name typed by the user, null if cancelled or empty */
+	private String askVersionName(String initial) {
+		Object name = JOptionPane.showInputDialog(this, Messages.getString("ResourcePlan.VersionName"), getTitle(), //$NON-NLS-1$
+				JOptionPane.QUESTION_MESSAGE, null, null, initial);
+		return name == null || name.toString().trim().length() == 0 ? null : name.toString().trim();
+	}
+
+	private void renameVersion() {
+		if (version == null)
+			return;
+		String name = askVersionName(version.getName());
+		if (name == null || name.equals(version.getName()))
+			return;
+		if (versions.find(name) != null && versions.find(name) != version) {
+			JOptionPane.showMessageDialog(this, MessageFormat.format(Messages.getString("ResourcePlan.VersionNameUsed"), name)); //$NON-NLS-1$
+			return;
+		}
+		versions.rename(version, name);
+		versions.save(project);
+		fillVersionChoice();
+		showVersionStatus();
+	}
+
+	/** Deletes the version shown. The plan stays shown, as changes not saved */
+	private void deleteVersion() {
+		if (version == null || JOptionPane.showConfirmDialog(this,
+				MessageFormat.format(Messages.getString("ResourcePlan.DeleteVersionConfirm"), version.getName()), getTitle(), //$NON-NLS-1$
+				JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+			return;
+		versions.remove(version);
+		versions.save(project);
+		version = null;
+		savedSnapshot = ""; // never equal: the plan shown is not saved anywhere
+		fillVersionChoice();
+		showVersionStatus();
+	}
+
+	/** When the version shown was saved, if it is the one applied, and if it has changes not saved */
+	private void showVersionStatus() {
+		if (versionStatus == null)
+			return;
+		StringBuilder text = new StringBuilder("<html>"); //$NON-NLS-1$
+		if (version == null)
+			text.append(Messages.getString("ResourcePlan.ResourcesPlanStatus")); //$NON-NLS-1$
+		else {
+			text.append(MessageFormat.format(Messages.getString("ResourcePlan.SavedAt"), //$NON-NLS-1$
+					DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(new Date(version.getSaved()))));
+			if (version.getName().equals(versions.getApplied()))
+				text.append(" &middot; <font color='#2e7d32'>").append(Messages.getString("ResourcePlan.AppliedMark")).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		}
+		if (isChanged())
+			text.append(" &middot; <font color='red'>").append(Messages.getString("ResourcePlan.Unsaved")).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		versionStatus.setText(text.append("</html>").toString()); //$NON-NLS-1$
 	}
 
 	public JComponent createContentPanel() {
@@ -351,6 +588,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		FormLayout layout = new FormLayout("600dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
+		builder.append(versionBar());
 		builder.appendSeparator(Messages.getString("ResourcePlan.Parameters")); //$NON-NLS-1$
 		builder.append(parameters.getPanel());
 		builder.append(help("ResourcePlan.ParametersHelp")); //$NON-NLS-1$
@@ -370,7 +608,9 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		builder.append(buttons(addLine, removeLine, defaultDates));
 		builder.appendSeparator(Messages.getString("ResourcePlan.Verdict")); //$NON-NLS-1$
 		builder.append(verdictScroll);
-		showVerdict();
+		update(); // the parameters as the fields show them
+		savedSnapshot = plan.snapshot();
+		showVersionStatus();
 		return builder.getPanel();
 	}
 
