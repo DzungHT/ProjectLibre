@@ -59,6 +59,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import javax.swing.undo.AbstractUndoableEdit;
+import javax.swing.undo.CannotRedoException;
+import javax.swing.undo.CannotUndoException;
+
 import com.projectlibre1.options.TaskDefaultOption;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.assignment.AssignmentService;
@@ -72,7 +76,8 @@ import com.projectlibre1.undo.ScheduleBackupEdit;
  * Writes the people of an AssignmentBoard in the project, as a single undo step. Each task whose people changed
  * loses its labor assignments and gets one per person chosen, with units = the Max Units of the person when the task
  * starts (or of its first later period with units). The work of the task is kept: it lasts work / units. No leveling
- * delay, no constraint, no link: the dates are calculated by ProjectLibre.
+ * delay, no constraint, no link: the dates are calculated by ProjectLibre. The locks of the tasks are written in the
+ * same undo step.
  */
 public class AssignmentBoardWriter {
 	private AssignmentBoardWriter() {
@@ -91,8 +96,18 @@ public class AssignmentBoardWriter {
 		int transactionId = project.fireMultipleTransaction(0, true);
 		try {
 			project.getUndoController().getEditSupport().postEdit(new ScheduleBackupEdit(tasks, eventSource));
-			for (AssignmentBoard.Row row : rows)
-				write(board, row, eventSource);
+			LockEdit locks = new LockEdit();
+			for (AssignmentBoard.Row row : rows) {
+				if (row.isPeopleChanged())
+					write(board, row, eventSource);
+				if (row.isLocked() != row.getTask().isAssignmentLocked())
+					locks.add(row.getTask(), row.isLocked());
+			}
+			if (!locks.tasks.isEmpty()) {
+				locks.redo();
+				project.getUndoController().getEditSupport().postEdit(locks);
+				project.setGroupDirty(true);
+			}
 		} finally {
 			project.fireMultipleTransaction(transactionId, false);
 			project.endUndoUpdate();
@@ -123,6 +138,31 @@ public class AssignmentBoardWriter {
 				task.setSchedulingType(schedulingType);
 				task.setEffortDriven(effortDriven);
 			}
+		}
+	}
+
+	/** The locks of tasks changed, undone with the assignments */
+	private static class LockEdit extends AbstractUndoableEdit {
+		private static final long serialVersionUID = 1L;
+		final List<NormalTask> tasks = new ArrayList<NormalTask>();
+		final List<Boolean> locked = new ArrayList<Boolean>();
+
+		void add(NormalTask task, boolean lock) {
+			tasks.add(task);
+			locked.add(lock);
+		}
+		public void undo() throws CannotUndoException {
+			super.undo();
+			set(true);
+		}
+		public void redo() throws CannotRedoException {
+			if (canRedo())
+				super.redo();
+			set(false);
+		}
+		private void set(boolean undo) {
+			for (int i = 0; i < tasks.size(); i++)
+				tasks.get(i).setAssignmentLocked(undo != locked.get(i));
 		}
 	}
 

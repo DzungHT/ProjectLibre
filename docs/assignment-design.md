@@ -98,8 +98,8 @@ Ribbon HTD Planner, nhóm **Planning**, cạnh nút Resource Plan.
 | **Bỏ giao** | Xoá người được giao của các task đang chọn |
 | **Gợi ý** | Điền cột *Đề xuất* cho task chưa giao và chưa khoá (mục 5) |
 | **Chấp nhận đề xuất** | Đề xuất của các task đang chọn (hoặc tất cả nếu không chọn) thành người được giao |
-| **Khoá / Mở khoá** | Task khoá không bị Gợi ý, Giao cụm, Thay người đụng tới |
-| Kéo task sang người | Như *Giao cho người đã chọn* (A2, nếu kịp) |
+| **Khoá / Mở khoá** | Task khoá không bị Gợi ý, Giao, Giao cụm, Bỏ giao, Thay người đụng tới; dòng trạng thái ghi số task khoá được giữ. Muốn đổi người thì mở khoá trước. Bấm vào ô khoá (cột đầu) để khoá/mở một task, hoặc các task dưới một dòng tổng hợp (theo bộ lọc) |
+| Kéo task thả vào người | Như *Giao cho người đã chọn* |
 
 Mọi thao tác chỉ sửa trong hộp thoại, thanh tải tính lại ngay. **Apply** mới ghi vào dự án (mục 7).
 
@@ -112,13 +112,14 @@ Gợi ý theo **cụm chức năng**, để một người làm trọn một ch�
 **chung với Resource Plan** (mục 4.3), không có ngưỡng riêng cho từng người. "Còn trong ngưỡng" nghĩa là sau khi thêm
 task, tải của người đó không vượt ngưỡng cảnh báo thiếu.
 
-1. Duyệt các chức năng theo thứ tự WBS. Với mỗi role/kỹ năng có task chưa giao trong chức năng:
+1. Duyệt các chức năng (cha trực tiếp của task hoạt động; task không có cha là một chức năng riêng) theo thứ tự WBS.
+   Các task chưa giao, chưa khoá cùng role/kỹ năng trong một chức năng là **một nhóm**, giao cho cùng một người:
 2. **Ứng viên:** resource đúng role, `canDo(kỹ năng của người, kỹ năng yêu cầu)`, có năng lực > 0.
-3. **Chọn** theo thứ tự ưu tiên:
-   1. người đã làm task cùng role trong **chức năng này** (task đã giao hoặc đã khoá), nếu còn trong ngưỡng;
+3. **Chọn** theo thứ tự ưu tiên ("tải sau khi thêm" tính cả các đề xuất trước đó trong cùng lần Gợi ý):
+   1. người đã làm task cùng role trong **chức năng này** (đã giao, đã khoá, hoặc vừa được đề xuất), nếu còn trong ngưỡng;
    2. người đã làm task cùng role trong **cụm này** (cha của chức năng), nếu còn trong ngưỡng;
    3. **người có sẵn** còn trong ngưỡng (còn rảnh), tải sau khi thêm thấp nhất;
-   4. **người TBD** có tải sau khi thêm thấp nhất.
+   4. **người TBD** có tải sau khi thêm thấp nhất (nếu không có TBD thì người có tải sau khi thêm thấp nhất).
 
    Hoà thì ưu tiên người có kỹ năng khớp đúng (BE) trước người tổ hợp (Fullstack), rồi thứ tự trong bảng người.
 4. Không có ứng viên: để trống, cảnh báo *không có người đúng role/kỹ năng*.
@@ -127,8 +128,12 @@ task, tải của người đó không vượt ngưỡng cảnh báo thiếu.
 Cụm là cha trực tiếp của chức năng, nên khi người dùng đã chia module lớn thành các cấp WBS thấp hơn thì gợi ý giữ theo
 phần đã chia, không dồn cả module cho một người.
 
-Tham số (nhớ bằng `Preferences`, có nút *Mặc định*): ưu tiên giữ cụm chức năng (bật), giữ cụm (bật), ưu tiên người có
-sẵn (bật).
+Tham số (hỏi mỗi lần bấm *Gợi ý...*, nhớ bằng `Preferences`, có nút *Mặc định*): giữ cụm chức năng (bật; tắt thì mỗi
+task một nhóm, bỏ bước 3.1), giữ cụm (bật; tắt thì bỏ bước 3.2), ưu tiên người có sẵn (bật; tắt thì bỏ bước 3.3 và 3.4,
+lấy người có tải sau khi thêm thấp nhất).
+
+Hiển thị: cột *Đề xuất* (chữ nghiêng xanh lá; dòng tổng hợp ghi số đề xuất bên dưới), thanh tải có phần xanh lá nhạt là
+effort được đề xuất và ghi `tải hiện tại → tải khi chấp nhận`.
 
 Gợi ý không tính ngày, nên có thể đề xuất một người làm nhiều chức năng mà bước 3 xếp ra trễ. Lúc đó quay lại hộp thoại
 để chuyển bớt việc (mục 6).
@@ -153,8 +158,9 @@ Gợi ý không tính ngày, nên có thể đề xuất một người làm nhi
 - Cả lần Apply là một bước Undo.
 - Task có nhiều hơn một phân công (sửa tay ngoài hộp thoại): hiện tất cả người, cảnh báo; giao lại thì thay bằng một người.
 - Phân công tới resource không có role (resource cũ, không phải labor): giữ nguyên, hiện tên, không tính tải.
-- **Danh sách task khoá** và tham số Gợi ý lưu trong file dự án, cùng chỗ với `ResourcePlanOptions` (theo unique id của
-  task). Cột *Đề xuất* không lưu: đóng hộp thoại là mất, bấm Gợi ý lại để có.
+- **Khoá** là một field của task (`NormalTask.assignmentLocked`), lưu trong file .pod; ghi khi Apply, cùng bước Undo
+  với phân công. Tham số Gợi ý nhớ bằng `Preferences` (dùng chung mọi dự án). Cột *Đề xuất* không lưu: đóng hộp thoại
+  là mất, bấm Gợi ý lại để có.
 - Mở lại hộp thoại: đọc phân công hiện có của dự án.
 
 ## 8. Cảnh báo
@@ -178,7 +184,7 @@ Tooltip ghi lý do cụ thể (ví dụ: *cần BE, DEV J #2 chỉ có FE*).
 | Giai đoạn | Nội dung |
 |---|---|
 | A1 | Hộp thoại: bảng task + bảng người, tải, giao tay hàng loạt, Giao cụm, Bỏ giao, cảnh báo, Apply (một Undo), đọc lại từ dự án |
-| A2 | Gợi ý + Chấp nhận đề xuất, khoá task (lưu trong dự án), tham số Gợi ý; kéo-thả nếu kịp |
+| A2 | Gợi ý + Chấp nhận đề xuất, khoá task (lưu trong dự án), tham số Gợi ý, kéo-thả task sang người |
 | A3 | Thay người, Chuyển bớt việc, Xuất Excel; icon Sai role / Thiếu kỹ năng / Nhiều người ở bảng task |
 
 Sau đó: bước 3 Re-link — mặc định nối task của mỗi người theo thứ tự WBS, đổi thứ tự ở bước đó.

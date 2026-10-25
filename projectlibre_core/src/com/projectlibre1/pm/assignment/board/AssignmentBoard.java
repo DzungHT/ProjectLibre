@@ -61,6 +61,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -102,6 +103,12 @@ public class AssignmentBoard {
 		/** The labor resources of the task in the project, and the ones chosen in the board */
 		private final List<Resource> original = new ArrayList<Resource>();
 		private final List<Resource> resources = new ArrayList<Resource>();
+		/** Person suggested, null for none; true if no person can do the task (see suggest()) */
+		private Resource suggestion = null;
+		private boolean noCandidate = false;
+		/** Fixed people: kept by the suggestions and the bulk changes. In the project, and in the board */
+		private final boolean originalLocked;
+		private boolean locked;
 
 		Row(NormalTask task, Row parent, String role, String skill) {
 			this.task = task;
@@ -109,6 +116,7 @@ public class AssignmentBoard {
 			this.level = parent == null ? 0 : parent.level + 1;
 			this.role = role;
 			this.skill = skill;
+			this.originalLocked = this.locked = role != null && task.isAssignmentLocked();
 			if (parent != null)
 				parent.children.add(this);
 		}
@@ -125,7 +133,13 @@ public class AssignmentBoard {
 		/** People chosen for the task, usually one */
 		public List<Resource> getResources() { return resources; }
 		/** True if the people chosen are not the ones of the project */
-		public boolean isChanged() { return !new LinkedHashSet<Resource>(original).equals(new LinkedHashSet<Resource>(resources)); }
+		public boolean isPeopleChanged() { return !new LinkedHashSet<Resource>(original).equals(new LinkedHashSet<Resource>(resources)); }
+		/** True if the people or the lock are not the ones of the project */
+		public boolean isChanged() { return isPeopleChanged() || locked != originalLocked; }
+		public Resource getSuggestion() { return suggestion; }
+		/** True if the last suggestions found no person of the role and skill of the task */
+		public boolean hasNoCandidate() { return noCandidate; }
+		public boolean isLocked() { return locked; }
 		/** Effort at point 1.0, hours: the work of the task, or of the tasks below a summary */
 		public double getHours() {
 			if (isActivity())
@@ -141,7 +155,7 @@ public class AssignmentBoard {
 	public static class Person {
 		private final ResourceImpl resource;
 		private final ResourcePlan.Line line;
-		private double assignedHours;
+		private double assignedHours, suggestedHours;
 		private int tasks;
 
 		Person(ResourceImpl resource, ResourcePlan.Line line) {
@@ -170,6 +184,15 @@ public class AssignmentBoard {
 			if (getCapacityHours() <= EPSILON)
 				return assignedHours <= EPSILON ? 0 : Double.POSITIVE_INFINITY;
 			return assignedHours / getCapacityHours() * 100;
+		}
+		/** Effort of the tasks suggested for the person, hours at point 1.0 */
+		public double getSuggestedHours() { return suggestedHours; }
+		/** Load once the suggestions are accepted, % */
+		public double getLoadWithSuggestions() {
+			double hours = assignedHours + suggestedHours;
+			if (getCapacityHours() <= EPSILON)
+				return hours <= EPSILON ? 0 : Double.POSITIVE_INFINITY;
+			return hours / getCapacityHours() * 100;
 		}
 	}
 
@@ -248,13 +271,17 @@ public class AssignmentBoard {
 		return row;
 	}
 
-	/** Calculates the load of the people from the tasks chosen for them */
+	/** Calculates the load of the people from the tasks chosen for them, and the effort suggested to them */
 	public void calculate() {
 		for (Person person : persons) {
 			person.assignedHours = 0;
+			person.suggestedHours = 0;
 			person.tasks = 0;
 		}
 		for (Row row : activities) {
+			Person suggested = row.suggestion == null ? null : personOf.get(row.suggestion);
+			if (suggested != null)
+				suggested.suggestedHours += row.getHours();
 			int count = row.resources.size();
 			for (Resource resource : row.resources) {
 				Person person = personOf.get(resource);
@@ -266,16 +293,218 @@ public class AssignmentBoard {
 		}
 	}
 
-	/** Gives the tasks to a person, instead of the people they had. Null removes their people */
-	public void assign(Collection<Row> rows, Resource resource) {
+	/**
+	 * Gives the tasks to a person, instead of the people they had, and drops their suggestions. Null removes their
+	 * people. The locked tasks are kept
+	 * @return the number of locked tasks kept
+	 */
+	public int assign(Collection<Row> rows, Resource resource) {
+		int kept = 0;
 		for (Row row : rows) {
 			if (!row.isActivity())
 				continue;
+			if (row.locked) {
+				kept++;
+				continue;
+			}
 			row.resources.clear();
 			if (resource != null)
 				row.resources.add(resource);
+			row.suggestion = null;
+			row.noCandidate = false;
 		}
 		calculate();
+		return kept;
+	}
+
+	public void setLocked(Collection<Row> rows, boolean locked) {
+		for (Row row : rows)
+			if (row.isActivity())
+				row.locked = locked;
+	}
+
+	/**
+	 * Suggests a person for the tasks without people and not locked, by function (the summary above the tasks), in the
+	 * order of the WBS. The tasks of a role and skill in a function go to a single person, chosen in this order:
+	 * <ol>
+	 * <li>the person already doing tasks of the role in the function, if the load stays within the shortage warning
+	 * of the Resource Plan once the tasks are added (see SuggestOptions.isKeepFunction())</li>
+	 * <li>the person already doing tasks of the role in the cluster (the summary above the function), same condition</li>
+	 * <li>the existing person with time left: the lowest load once the tasks are added, within the warning</li>
+	 * <li>the TBD person with the lowest load once the tasks are added; all the people if there is no TBD one</li>
+	 * </ol>
+	 * A tie goes to the person whose skill is the required one (BE before Fullstack), then to the first in the list.
+	 * The suggestions only fill the suggestion of the tasks: acceptSuggestions() makes them the people.
+	 * @return the number of tasks with a suggestion
+	 */
+	public int suggest(SuggestOptions options) {
+		clearSuggestions();
+		Map<Person, Double> hours = new IdentityHashMap<Person, Double>();
+		for (Person person : persons)
+			hours.put(person, person.assignedHours);
+		// the functions in the order of the WBS; a task without summary is a function of its own
+		Map<Object, List<Row>> functions = new LinkedHashMap<Object, List<Row>>();
+		for (Row row : activities) {
+			Object function = row.parent == null ? row : row.parent;
+			List<Row> rows = functions.get(function);
+			if (rows == null)
+				functions.put(function, rows = new ArrayList<Row>());
+			rows.add(row);
+		}
+		int count = 0;
+		for (List<Row> function : functions.values()) {
+			Map<Object, List<Row>> groups = new LinkedHashMap<Object, List<Row>>();
+			for (Row row : function) {
+				if (row.locked || !row.resources.isEmpty())
+					continue;
+				Object key = options.isKeepFunction() ? ResourcePlan.key(row.role, row.skill) : row;
+				List<Row> group = groups.get(key);
+				if (group == null)
+					groups.put(key, group = new ArrayList<Row>());
+				group.add(row);
+			}
+			for (List<Row> group : groups.values()) {
+				Person person = choose(group, function, options, hours);
+				for (Row row : group) {
+					row.suggestion = person == null ? null : person.resource;
+					row.noCandidate = person == null;
+				}
+				if (person == null)
+					continue;
+				hours.put(person, hours.get(person) + hours(group));
+				count += group.size();
+			}
+		}
+		calculate();
+		return count;
+	}
+
+	/** The person for a group of tasks of a function, see suggest(). Null if no one can do them */
+	private Person choose(List<Row> group, List<Row> function, SuggestOptions options, Map<Person, Double> hours) {
+		Row first = group.get(0);
+		double added = hours(group);
+		List<Person> candidates = new ArrayList<Person>();
+		for (Person person : persons)
+			if (canDo(person, first) && person.getCapacityHours() > EPSILON)
+				candidates.add(person);
+		if (candidates.isEmpty())
+			return null;
+		Person person = null;
+		if (options.isKeepFunction())
+			person = lowest(withTime(doing(candidates, function, first.role), added, hours), first, added, hours);
+		if (person == null && options.isKeepCluster() && first.parent != null && first.parent.parent != null)
+			person = lowest(withTime(doing(candidates, activities(Collections.singletonList(first.parent.parent)), first.role), added, hours),
+					first, added, hours);
+		if (person == null && options.isPreferExisting()) {
+			List<Person> existing = new ArrayList<Person>();
+			for (Person candidate : candidates)
+				if (candidate.isExisting())
+					existing.add(candidate);
+			person = lowest(withTime(existing, added, hours), first, added, hours);
+		}
+		if (person == null && options.isPreferExisting()) {
+			List<Person> tbd = new ArrayList<Person>();
+			for (Person candidate : candidates)
+				if (!candidate.isExisting())
+					tbd.add(candidate);
+			person = lowest(tbd, first, added, hours);
+		}
+		return person == null ? lowest(candidates, first, added, hours) : person;
+	}
+
+	/** The candidates doing (or suggested for) tasks of a role among rows */
+	private List<Person> doing(List<Person> candidates, List<Row> rows, String role) {
+		Set<Resource> resources = Collections.newSetFromMap(new IdentityHashMap<Resource, Boolean>());
+		for (Row row : rows)
+			if (row.isActivity() && row.role.equalsIgnoreCase(role)) {
+				resources.addAll(row.resources);
+				if (row.suggestion != null)
+					resources.add(row.suggestion);
+			}
+		List<Person> result = new ArrayList<Person>();
+		for (Person candidate : candidates)
+			if (resources.contains(candidate.resource))
+				result.add(candidate);
+		return result;
+	}
+
+	/** The candidates whose load stays within the shortage warning once the effort is added */
+	private List<Person> withTime(List<Person> candidates, double added, Map<Person, Double> hours) {
+		List<Person> result = new ArrayList<Person>();
+		for (Person candidate : candidates)
+			if (loadAfter(candidate, added, hours) <= 100 + options.getShortageWarning() + EPSILON)
+				result.add(candidate);
+		return result;
+	}
+
+	/** The candidate with the lowest load once the effort is added, the one of the required skill on a tie. Null if none */
+	private Person lowest(List<Person> candidates, Row row, double added, Map<Person, Double> hours) {
+		Person best = null;
+		double bestLoad = 0;
+		for (Person candidate : candidates) {
+			double load = loadAfter(candidate, added, hours);
+			if (best == null || load < bestLoad - EPSILON
+					|| (load < bestLoad + EPSILON && exactSkill(candidate, row) && !exactSkill(best, row))) {
+				best = candidate;
+				bestLoad = load;
+			}
+		}
+		return best;
+	}
+
+	private static double loadAfter(Person person, double added, Map<Person, Double> hours) {
+		return (hours.get(person) + added) / person.getCapacityHours() * 100;
+	}
+
+	private static boolean exactSkill(Person person, Row row) {
+		return person.getSkill().equalsIgnoreCase(row.skill);
+	}
+
+	private static double hours(List<Row> rows) {
+		double hours = 0;
+		for (Row row : rows)
+			hours += row.getHours();
+		return hours;
+	}
+
+	/**
+	 * The suggestions of rows become their people, for the tasks not locked
+	 * @return the number of tasks changed
+	 */
+	public int acceptSuggestions(Collection<Row> rows) {
+		int count = 0;
+		for (Row row : rows)
+			if (row.isActivity() && !row.locked && row.suggestion != null) {
+				row.resources.clear();
+				row.resources.add(row.suggestion);
+				row.suggestion = null;
+				count++;
+			}
+		calculate();
+		return count;
+	}
+
+	public void clearSuggestions() {
+		for (Row row : activities) {
+			row.suggestion = null;
+			row.noCandidate = false;
+		}
+	}
+
+	public int getSuggestionCount() {
+		int count = 0;
+		for (Row row : activities)
+			if (row.suggestion != null)
+				count++;
+		return count;
+	}
+
+	public int getLockedCount() {
+		int count = 0;
+		for (Row row : activities)
+			if (row.locked)
+				count++;
+		return count;
 	}
 
 	/** True if a person has the role of a task, and its skill when it needs one */
@@ -310,7 +539,7 @@ public class AssignmentBoard {
 		if (!row.isActivity())
 			return issues;
 		if (row.resources.isEmpty())
-			issues.add(Messages.getString("AssignmentBoard.Unassigned")); //$NON-NLS-1$
+			issues.add(Messages.getString(row.noCandidate ? "AssignmentBoard.NoCandidate" : "AssignmentBoard.Unassigned")); //$NON-NLS-1$ //$NON-NLS-2$
 		else if (row.resources.size() > 1)
 			issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.Several"), names(row.resources))); //$NON-NLS-1$
 		for (Resource resource : row.resources) {
