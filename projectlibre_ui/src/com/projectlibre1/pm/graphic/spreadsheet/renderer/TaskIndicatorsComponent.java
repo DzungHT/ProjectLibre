@@ -63,6 +63,7 @@ import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.configuration.Configuration;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.graphic.configuration.HasTaskIndicators;
+import com.projectlibre1.pm.assignment.board.AssignmentBoard;
 import com.projectlibre1.pm.availability.AvailabilityWarning;
 import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.task.NormalTask;
@@ -88,6 +89,7 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 	protected JLabel delegatedMe;
 	protected JLabel unavailable;
 	protected JLabel linkIssue;
+	protected JLabel assignmentIssue;
 	Field constraintTypeField = Configuration.getFieldFromId("Field.constraintType"); //$NON-NLS-1$
 	Field constraintDateField = Configuration.getFieldFromId("Field.constraintDate"); //$NON-NLS-1$
 	Field deadlineField = Configuration.getFieldFromId("Field.deadline"); //$NON-NLS-1$
@@ -129,6 +131,8 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 		unavailable.setOpaque(false);
 		linkIssue = new JLabel(" ",IconManager.getIcon("indicator.linkIssue"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
 		linkIssue.setOpaque(false);
+		assignmentIssue = new JLabel(" ",IconManager.getIcon("indicator.assignment"),  JLabel.RIGHT); //$NON-NLS-1$ //$NON-NLS-2$
+		assignmentIssue.setOpaque(false);
 	}
 	
 	
@@ -172,6 +176,16 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 				text.append(Messages.getString("AvailabilityWarning.Header")); //$NON-NLS-1$
 				for (String period : periods)
 					text.append("<br>- ").append(period); //$NON-NLS-1$
+				text.append("<br>"); //$NON-NLS-1$
+			}
+			// several people, a wrong role or a missing skill on a task of an activity, see AssignmentBoard
+			List<String> issues = AssignmentBoard.taskIssues((NormalTask)indicators);
+			if (!issues.isEmpty()) {
+				setLook(assignmentIssue,isSelected,hasFocus);
+				label.add(assignmentIssue);
+				text.append(Messages.getString("AssignmentBoard.Indicator")); //$NON-NLS-1$
+				for (String issue : issues)
+					text.append("<br>- ").append(issue); //$NON-NLS-1$
 				text.append("<br>"); //$NON-NLS-1$
 			}
 		}

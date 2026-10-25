@@ -74,6 +74,8 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.IOException;
 import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
@@ -95,6 +97,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -112,13 +115,13 @@ import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
 
+import com.projectlibre1.exchange.wbsexcel.AssignmentExcelExporter;
 import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.assignment.board.AssignmentBoard;
 import com.projectlibre1.pm.assignment.board.SuggestOptions;
 import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.pm.graphic.frames.GraphicManager;
 import com.projectlibre1.pm.resource.Resource;
-import com.projectlibre1.pm.resource.labor.LaborCatalog;
 import com.projectlibre1.pm.resource.plan.ResourcePlan;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
@@ -346,8 +349,20 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			public void actionPerformed(ActionEvent e) {
 				lock(false);
 			}
+		}), separator(), button("AssignmentBoard.Replace", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				replacePerson();
+			}
+		}), button("AssignmentBoard.Offload", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				offload();
+			}
 		}));
-		JPanel closing = flow(button("AssignmentBoard.Apply", new ActionListener() { //$NON-NLS-1$
+		JPanel closing = flow(button("AssignmentBoard.Export", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				export();
+			}
+		}), button("AssignmentBoard.Apply", new ActionListener() { //$NON-NLS-1$
 			public void actionPerformed(ActionEvent e) {
 				apply();
 			}
@@ -719,6 +734,168 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		changed(kept);
 	}
 
+	/** Gives the tasks of the person selected to another person of its role, as when a real person is found for a TBD one */
+	private void replacePerson() {
+		AssignmentBoard.Person from = selectedPerson();
+		if (from == null) {
+			JOptionPane.showMessageDialog(this, Messages.getString("AssignmentBoard.ChoosePerson"), getTitle(), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
+			return;
+		}
+		int locked = 0;
+		for (AssignmentBoard.Row row : board.getActivities())
+			if (row.getResources().contains(from.getResource()) && row.isLocked())
+				locked++;
+		JComboBox choice = new JComboBox();
+		for (AssignmentBoard.Person person : board.getPersons())
+			if (person != from && person.getRole().equalsIgnoreCase(from.getRole()))
+				choice.addItem(new PersonChoice(person));
+		if (choice.getItemCount() == 0) {
+			JOptionPane.showMessageDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.NoOtherPerson"), from.getRole()), //$NON-NLS-1$
+					getTitle(), JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
+		JCheckBox withLocked = new JCheckBox(MessageFormat.format(Messages.getString("AssignmentBoard.WithLocked"), String.valueOf(locked))); //$NON-NLS-1$
+		withLocked.setEnabled(locked > 0);
+		JPanel panel = new JPanel(new GridBagLayout());
+		GridBagConstraints c = new GridBagConstraints();
+		c.insets = new Insets(3, 3, 3, 3);
+		c.anchor = GridBagConstraints.WEST;
+		c.gridx = 0;
+		c.gridy = GridBagConstraints.RELATIVE;
+		String help = MessageFormat.format(Messages.getString("AssignmentBoard.ReplaceHelp"), from.getName(), String.valueOf(from.getTasks()), //$NON-NLS-1$
+				effort(from.getAssignedHours()));
+		if (!from.isExisting())
+			help += " " + Messages.getString("AssignmentBoard.ReplaceTbd"); //$NON-NLS-1$ //$NON-NLS-2$
+		panel.add(new JLabel("<html><div style='width:420px'>" + help + "</div></html>"), c); //$NON-NLS-1$ //$NON-NLS-2$
+		panel.add(choice, c);
+		panel.add(withLocked, c);
+		if (JOptionPane.showConfirmDialog(this, panel, Messages.getString("AssignmentBoard.Replace"), JOptionPane.OK_CANCEL_OPTION, //$NON-NLS-1$
+				JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION)
+			return;
+		AssignmentBoard.Person to = ((PersonChoice) choice.getSelectedItem()).person;
+		int[] result = board.replace(from, to, withLocked.isSelected());
+		changed(result[1]);
+		note = MessageFormat.format(Messages.getString("AssignmentBoard.Replaced"), String.valueOf(result[0]), from.getName(), to.getName()) + note; //$NON-NLS-1$
+		showStatus();
+	}
+
+	/**
+	 * Moves tasks from the person selected, or from all the people over the shortage warning if none is selected, to
+	 * the people of their role and skill with the lowest load, after showing the tasks to move
+	 */
+	private void offload() {
+		AssignmentBoard.Person selected = selectedPerson();
+		List<AssignmentBoard.Person> people = new ArrayList<AssignmentBoard.Person>();
+		if (selected != null)
+			people.add(selected);
+		else
+			for (AssignmentBoard.Person person : board.getPersons())
+				if (board.isOverloaded(person))
+					people.add(person);
+		if (people.isEmpty() || (selected != null && !board.isOverloaded(selected))) {
+			JOptionPane.showMessageDialog(this, selected == null ? Messages.getString("AssignmentBoard.NoOverload") //$NON-NLS-1$
+					: MessageFormat.format(Messages.getString("AssignmentBoard.NotOverloaded"), selected.getName()), getTitle(), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
+			return;
+		}
+		final List<AssignmentBoard.Move> moves = board.planOffload(people);
+		if (moves.isEmpty()) {
+			JOptionPane.showMessageDialog(this, Messages.getString("AssignmentBoard.NoOffload"), getTitle(), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
+			return;
+		}
+		// the load of the people once the tasks are moved
+		Map<AssignmentBoard.Person, Double> hours = new LinkedHashMap<AssignmentBoard.Person, Double>();
+		for (AssignmentBoard.Move move : moves) {
+			for (AssignmentBoard.Person person : new AssignmentBoard.Person[] { move.getFrom(), move.getTo() })
+				if (!hours.containsKey(person))
+					hours.put(person, person.getAssignedHours());
+			hours.put(move.getFrom(), hours.get(move.getFrom()) - move.getRow().getHours());
+			hours.put(move.getTo(), hours.get(move.getTo()) + move.getRow().getHours());
+		}
+		List<String> loads = new ArrayList<String>();
+		for (Map.Entry<AssignmentBoard.Person, Double> entry : hours.entrySet()) {
+			AssignmentBoard.Person person = entry.getKey();
+			double after = person.getCapacityHours() <= 0 ? Double.POSITIVE_INFINITY : entry.getValue() / person.getCapacityHours() * 100;
+			loads.add(person.getName() + ": " + load(person) + " → " + percent(after)); //$NON-NLS-1$ //$NON-NLS-2$
+		}
+		final String[] headers = { "Task", "Function", "Effort", "From", "To" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+		JTable table = new JTable(new AbstractTableModel() {
+			private static final long serialVersionUID = 1L;
+			public int getRowCount() {
+				return moves.size();
+			}
+			public int getColumnCount() {
+				return headers.length;
+			}
+			public String getColumnName(int column) {
+				return Messages.getString(column == 3 ? "AssignmentBoard.MoveFrom" : column == 4 ? "AssignmentBoard.MoveTo" //$NON-NLS-1$ //$NON-NLS-2$
+						: "AssignmentBoard." + headers[column]); //$NON-NLS-1$
+			}
+			public Object getValueAt(int index, int column) {
+				AssignmentBoard.Move move = moves.get(index);
+				switch (column) {
+				case 0: return move.getRow().getTask().getName();
+				case 1: return move.getRow().getParent() == null ? "" : move.getRow().getParent().getTask().getName(); //$NON-NLS-1$
+				case 2: return effort(move.getRow().getHours());
+				case 3: return move.getFrom().getName();
+				default: return move.getTo().getName();
+				}
+			}
+		});
+		table.getTableHeader().setReorderingAllowed(false);
+		JScrollPane scroll = new JScrollPane(table);
+		scroll.setPreferredSize(new Dimension(640, Math.min(320, 40 + moves.size() * table.getRowHeight())));
+		JPanel panel = new JPanel(new BorderLayout(0, 6));
+		panel.add(new JLabel("<html><div style='width:600px'>" + MessageFormat.format(Messages.getString("AssignmentBoard.OffloadHelp"), //$NON-NLS-1$ //$NON-NLS-2$
+				String.valueOf(moves.size())) + "</div></html>"), BorderLayout.NORTH); //$NON-NLS-1$
+		panel.add(scroll, BorderLayout.CENTER);
+		panel.add(new JLabel(html(loads)), BorderLayout.SOUTH);
+		if (JOptionPane.showConfirmDialog(this, panel, Messages.getString("AssignmentBoard.Offload"), JOptionPane.OK_CANCEL_OPTION, //$NON-NLS-1$
+				JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION)
+			return;
+		board.applyMoves(moves);
+		changed(0);
+		note = MessageFormat.format(Messages.getString("AssignmentBoard.Offloaded"), String.valueOf(moves.size())); //$NON-NLS-1$
+		showStatus();
+	}
+
+	/** Exports the people of the tasks and the load of the people, as shown, to an .xlsx */
+	private void export() {
+		Preferences preferences = null;
+		String directory = System.getProperty("user.home"); //$NON-NLS-1$
+		try {
+			preferences = Preferences.userNodeForPackage(AssignmentBoardDialog.class);
+			directory = preferences.get(EXPORT_DIRECTORY, directory);
+		} catch (Exception e) { // preferences not available
+		}
+		String name = board.getProject().getName();
+		name = name == null || name.trim().length() == 0 ? "" : name.trim().replaceAll("[\\\\/:*?\"<>|]", "_") + " - "; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		JFileChooser chooser = new JFileChooser();
+		chooser.putClientProperty("FileChooser.useShellFolder", Boolean.FALSE); //$NON-NLS-1$
+		chooser.setFileFilter(ExportWbsExcelDialog.xlsxFilter());
+		chooser.setSelectedFile(new File(directory, name + Messages.getString("AssignmentExcel.TasksSheet") + ".xlsx")); //$NON-NLS-1$ //$NON-NLS-2$
+		if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION)
+			return;
+		File file = chooser.getSelectedFile();
+		if (!file.getName().toLowerCase().endsWith(".xlsx")) //$NON-NLS-1$
+			file = new File(file.getParentFile(), file.getName() + ".xlsx"); //$NON-NLS-1$
+		if (file.exists() && JOptionPane.showConfirmDialog(this, MessageFormat.format(Messages.getString("ExportWbsExcelDialog.Overwrite"), file.getName()), //$NON-NLS-1$
+				getTitle(), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+			return;
+		try {
+			AssignmentExcelExporter.export(board, file, UNITS[unit], UNIT_HOURS[unit]);
+		} catch (IOException e) {
+			JOptionPane.showMessageDialog(this, MessageFormat.format(Messages.getString("ExportWbsExcelDialog.WriteError"), file.getName(), e.getMessage()), //$NON-NLS-1$
+					getTitle(), JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (preferences != null && file.getParentFile() != null)
+			preferences.put(EXPORT_DIRECTORY, file.getParentFile().getAbsolutePath());
+		JOptionPane.showMessageDialog(this, MessageFormat.format(Messages.getString("AssignmentExcel.Done"), file.getAbsolutePath()), getTitle(), //$NON-NLS-1$
+				JOptionPane.INFORMATION_MESSAGE);
+	}
+
+	private static final String EXPORT_DIRECTORY = "assignmentBoard.exportDirectory"; //$NON-NLS-1$
+
 	/** A person in a list: its name and its load */
 	private class PersonChoice {
 		final AssignmentBoard.Person person;
@@ -742,13 +919,6 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 
 	private static String percent(double load) {
 		return Double.isInfinite(load) ? "∞ %" : Math.round(load) + "%"; //$NON-NLS-1$ //$NON-NLS-2$
-	}
-
-	private static String level(AssignmentBoard.Person person) {
-		if (person.getLevel() < 0)
-			return ""; //$NON-NLS-1$
-		LaborCatalog.Category category = LaborCatalog.getInstance().find(person.getRole(), person.getLevel());
-		return category == null ? LaborCatalog.levelAbbreviation(person.getLevel()) : category.getLevelCode();
 	}
 
 	/** People of a task, or of the tasks below a summary: the first names and the number of the others */
@@ -1004,7 +1174,7 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 				case P_NAME: return person.getName();
 				case P_ROLE: return person.getRole();
 				case P_SKILL: return person.getSkill();
-				case P_LEVEL: return level(person);
+				case P_LEVEL: return person.getLevelCode();
 				case P_FROM: return dateFormat.format(new Date(person.getFrom()));
 				case P_TO: return dateFormat.format(new Date(person.getTo() - 1)); // the end of the working time of a day
 				case P_TASKS: return String.valueOf(person.getTasks());

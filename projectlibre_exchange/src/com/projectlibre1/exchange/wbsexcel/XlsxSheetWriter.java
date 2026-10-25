@@ -63,6 +63,7 @@ import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -70,10 +71,10 @@ import java.util.zip.ZipOutputStream;
 import com.projectlibre1.exchange.ulnl.XlsxSheetReader;
 
 /**
- * Minimal writer of a one sheet .xlsx (Office Open XML), counterpart of {@link XlsxSheetReader}.
+ * Minimal writer of a sheet of a .xlsx (Office Open XML), counterpart of {@link XlsxSheetReader}.
  * All the cells are inline strings with the Text number format, so that what is typed in Excel
  * stays text (a typed date is not turned into a serial number), except the cells with a number style.
- * Rows are added in order, then {@link #write(File)} writes the file.
+ * Rows are added in order, then {@link #write(File)} writes the file, or {@link #write(File, List)} a file of several sheets.
  */
 public class XlsxSheetWriter {
 	public static final int MAX_INDENT = 15;
@@ -154,32 +155,44 @@ public class XlsxSheetWriter {
 	}
 
 	public void write(File file) throws IOException {
+		write(file, Collections.singletonList(this));
+	}
+
+	/** Writes a file of several sheets, in their order */
+	public static void write(File file, List<XlsxSheetWriter> sheets) throws IOException {
 		ZipOutputStream zip = new ZipOutputStream(new FileOutputStream(file));
 		try {
 			Writer w = new BufferedWriter(new OutputStreamWriter(zip, "UTF-8")); //$NON-NLS-1$
-			entry(zip, w, "[Content_Types].xml", //$NON-NLS-1$
-				"<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" //$NON-NLS-1$
+			StringBuilder types = new StringBuilder("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" //$NON-NLS-1$
 				+ "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>" //$NON-NLS-1$
 				+ "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" //$NON-NLS-1$
-				+ "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>" //$NON-NLS-1$
-				+ "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>" //$NON-NLS-1$
-				+ "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>" //$NON-NLS-1$
+				+ "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"); //$NON-NLS-1$
+			for (int i = 1; i <= sheets.size(); i++)
+				types.append("<Override PartName=\"/xl/worksheets/sheet").append(i) //$NON-NLS-1$
+					.append(".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"); //$NON-NLS-1$
+			types.append("<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>" //$NON-NLS-1$
 				+ "</Types>"); //$NON-NLS-1$
+			entry(zip, w, "[Content_Types].xml", types.toString()); //$NON-NLS-1$
 			entry(zip, w, "_rels/.rels", //$NON-NLS-1$
 				"<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" //$NON-NLS-1$
 				+ "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>" //$NON-NLS-1$
 				+ "</Relationships>"); //$NON-NLS-1$
-			entry(zip, w, "xl/_rels/workbook.xml.rels", //$NON-NLS-1$
-				"<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" //$NON-NLS-1$
-				+ "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>" //$NON-NLS-1$
-				+ "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>" //$NON-NLS-1$
-				+ "</Relationships>"); //$NON-NLS-1$
-			entry(zip, w, "xl/workbook.xml", workbookXml()); //$NON-NLS-1$
+			// the sheets are rId1 to rIdN, the styles rIdN+1
+			StringBuilder rels = new StringBuilder("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"); //$NON-NLS-1$
+			for (int i = 1; i <= sheets.size(); i++)
+				rels.append("<Relationship Id=\"rId").append(i).append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet") //$NON-NLS-1$ //$NON-NLS-2$
+					.append(i).append(".xml\"/>"); //$NON-NLS-1$
+			rels.append("<Relationship Id=\"rId").append(sheets.size() + 1) //$NON-NLS-1$
+				.append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>"); //$NON-NLS-1$
+			entry(zip, w, "xl/_rels/workbook.xml.rels", rels.toString()); //$NON-NLS-1$
+			entry(zip, w, "xl/workbook.xml", workbookXml(sheets)); //$NON-NLS-1$
 			entry(zip, w, "xl/styles.xml", stylesXml()); //$NON-NLS-1$
-			zip.putNextEntry(new ZipEntry("xl/worksheets/sheet1.xml")); //$NON-NLS-1$
-			writeSheet(w);
-			w.flush();
-			zip.closeEntry();
+			for (int i = 0; i < sheets.size(); i++) {
+				zip.putNextEntry(new ZipEntry("xl/worksheets/sheet" + (i + 1) + ".xml")); //$NON-NLS-1$ //$NON-NLS-2$
+				sheets.get(i).writeSheet(w);
+				w.flush();
+				zip.closeEntry();
+			}
 			zip.finish();
 		} finally {
 			zip.close();
@@ -206,13 +219,23 @@ public class XlsxSheetWriter {
 		return "$A$" + autoFilterRow + ":$" + last + "$" + Math.max(autoFilterRow, rows.size()); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 	}
 
-	private String workbookXml() {
+	private static String workbookXml(List<XlsxSheetWriter> sheets) {
 		StringBuilder b = new StringBuilder();
 		b.append("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"); //$NON-NLS-1$
-		b.append("<sheets><sheet name=\"").append(escape(sheetName)).append("\" sheetId=\"1\" r:id=\"rId1\"/></sheets>"); //$NON-NLS-1$ //$NON-NLS-2$
-		if (autoFilterRow > 0)
-			b.append("<definedNames><definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"0\" hidden=\"1\">'") //$NON-NLS-1$
-				.append(escape(sheetName.replace("'", "''"))).append("'!").append(filterRange()).append("</definedName></definedNames>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		b.append("<sheets>"); //$NON-NLS-1$
+		for (int i = 0; i < sheets.size(); i++)
+			b.append("<sheet name=\"").append(escape(sheets.get(i).sheetName)).append("\" sheetId=\"").append(i + 1) //$NON-NLS-1$ //$NON-NLS-2$
+				.append("\" r:id=\"rId").append(i + 1).append("\"/>"); //$NON-NLS-1$ //$NON-NLS-2$
+		b.append("</sheets>"); //$NON-NLS-1$
+		StringBuilder names = new StringBuilder();
+		for (int i = 0; i < sheets.size(); i++) {
+			XlsxSheetWriter sheet = sheets.get(i);
+			if (sheet.autoFilterRow > 0)
+				names.append("<definedName name=\"_xlnm._FilterDatabase\" localSheetId=\"").append(i).append("\" hidden=\"1\">'") //$NON-NLS-1$ //$NON-NLS-2$
+					.append(escape(sheet.sheetName.replace("'", "''"))).append("'!").append(sheet.filterRange()).append("</definedName>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		}
+		if (names.length() > 0)
+			b.append("<definedNames>").append(names).append("</definedNames>"); //$NON-NLS-1$ //$NON-NLS-2$
 		b.append("</workbook>"); //$NON-NLS-1$
 		return b.toString();
 	}
