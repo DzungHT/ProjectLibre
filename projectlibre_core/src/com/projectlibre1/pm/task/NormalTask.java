@@ -1944,6 +1944,15 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	public void setAssignmentLocked(boolean assignmentLocked) {
 		this.assignmentLocked = assignmentLocked;
 	}
+	/** True if the constraint of the task was set by Re-link (the first day of its person): Re-link may change or remove it */
+	private boolean relinkConstraint = false;
+
+	public boolean isRelinkConstraint() {
+		return relinkConstraint;
+	}
+	public void setRelinkConstraint(boolean relinkConstraint) {
+		this.relinkConstraint = relinkConstraint;
+	}
 	/**
 	 * Cancelled task, like an inactive task of MS Project: its remaining work is set to 0 so that it does not
 	 * extend the schedule, and kept to be restored when it is un-cancelled. Its links, assignments, actual work
@@ -2322,6 +2331,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			n.activity = activity;
 			n.lane = lane;
 			n.assignmentLocked = assignmentLocked;
+			n.relinkConstraint = relinkConstraint;
 			n.cancelled = cancelled;
 			n.cancelDate = cancelDate;
 			n.cancelReason = cancelReason;

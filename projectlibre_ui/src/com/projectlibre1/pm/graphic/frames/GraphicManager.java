@@ -146,6 +146,8 @@ import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.dialog.RelinkDialog;
+import com.projectlibre1.pm.dependency.autolink.RelinkSummary;
 import com.projectlibre1.dialog.ResourcePlanDialog;
 import com.projectlibre1.dialog.AssignmentBoardDialog;
 import com.projectlibre1.pm.assignment.board.AssignmentBoard;
@@ -1069,6 +1071,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_VALIDATE_LINKS, new ValidateLinksAction());
 		actionsMap.addHandler(ACTION_RESOURCE_PLAN, new ResourcePlanAction());
 		actionsMap.addHandler(ACTION_ASSIGNMENT_BOARD, new AssignmentBoardAction());
+		actionsMap.addHandler(ACTION_RELINK, new RelinkAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
@@ -1842,37 +1845,74 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			AutoLinkPlan plan = AutoLinkDialog.doDialog(frame.getProject(), selection);
 			if (plan == null || plan.isEmpty())
 				return;
-			final AutoLinker linker = new AutoLinker(frame.getProject(), plan, frame);
-			final String[] messages = {
-					Messages.getString("AutoLink.Removing"), //$NON-NLS-1$
-					Messages.getString("AutoLink.Creating"), //$NON-NLS-1$
-					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
-			Frame f = getFrameInstance();
-			try {
-				BusyOperationDialog.run(f, Messages.getString("AutoLink.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
-					boolean started = false;
-					public boolean next(BusyOperationDialog dialog) {
-						if (!started) {
-							started = true;
-							dialog.setCancelable(false); // the links are changed from the first step
-							dialog.setProgress(messages[linker.getPhase()], 0, linker.getTotal());
-							dialog.endSlice();
-							return false;
-						}
-						if (linker.next())
-							return true;
-						dialog.setProgress(messages[Math.min(linker.getPhase(), messages.length - 1)], linker.getDone(), linker.getTotal());
-						if (linker.isLongStep())
-							dialog.endSlice(); // show the message before the long step
+			applyLinks(frame, plan, Messages.getString("AutoLink.Title")); //$NON-NLS-1$
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Applies the links of Auto Link or Re-link with a progress dialog. Returns false on an error */
+	private boolean applyLinks(DocumentFrame frame, AutoLinkPlan plan, String title) {
+		final AutoLinker linker = new AutoLinker(frame.getProject(), plan, frame);
+		final String[] messages = {
+				Messages.getString("AutoLink.Removing"), //$NON-NLS-1$
+				Messages.getString("AutoLink.Creating"), //$NON-NLS-1$
+				Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
+		Frame f = getFrameInstance();
+		try {
+			BusyOperationDialog.run(f, title, new BusyOperationDialog.Step() {
+				boolean started = false;
+				public boolean next(BusyOperationDialog dialog) {
+					if (!started) {
+						started = true;
+						dialog.setCancelable(false); // the links are changed from the first step
+						dialog.setProgress(messages[linker.getPhase()], 0, linker.getTotal());
+						dialog.endSlice();
 						return false;
 					}
-				});
-			} catch (Exception e) {
-				e.printStackTrace();
-				Alert.error(e.getMessage(), f);
-			} finally {
-				linker.close();
-			}
+					if (linker.next())
+						return true;
+					dialog.setProgress(messages[Math.min(linker.getPhase(), messages.length - 1)], linker.getDone(), linker.getTotal());
+					if (linker.isLongStep())
+						dialog.endSlice(); // show the message before the long step
+					return false;
+				}
+			});
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+			Alert.error(e.getMessage(), f);
+			return false;
+		} finally {
+			linker.close();
+		}
+	}
+	/** Links the tasks of each person one after the other, see docs/relink-design.md, then shows the finish */
+	public class RelinkAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			List<Task> selection = new ArrayList<Task>();
+			List impls = frame.getSelectedImpls(true);
+			if (impls != null)
+				for (Object impl : impls)
+					if (impl instanceof Task)
+						selection.add((Task) impl);
+			AutoLinkPlan plan = RelinkDialog.doDialog(frame.getProject(), selection);
+			if (plan == null)
+				return;
+			if (!plan.isEmpty() && !applyLinks(frame, plan, Messages.getString("Relink.Title"))) //$NON-NLS-1$
+				return;
+			frame.activateGanttView();
+			Project project = frame.getProject();
+			String text = (plan.isEmpty() ? Messages.getString("Relink.Nothing") + "\n" : "") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+					+ RelinkSummary.finishText(project, project.getEnd(), "Relink.Finish"); //$NON-NLS-1$
+			JOptionPane.showMessageDialog(getFrameInstance(), text, Messages.getString("Relink.Title"), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
 		}
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;

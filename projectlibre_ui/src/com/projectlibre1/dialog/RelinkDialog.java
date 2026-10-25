@@ -1,0 +1,250 @@
+/*******************************************************************************
+ * The contents of this file are subject to the Common Public Attribution License 
+ * Version 1.0 (the "License"); you may not use this file except in compliance with 
+ * the License. You may obtain a copy of the License at 
+ * http://www.projectlibre.com/license . The License is based on the Mozilla Public 
+ * License Version 1.1 but Sections 14 and 15 have been added to cover use of 
+ * software over a computer network and provide for limited attribution for the 
+ * Original Developer. In addition, Exhibit A has been modified to be consistent 
+ * with Exhibit B. 
+ *
+ * Software distributed under the License is distributed on an "AS IS" basis, 
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for the 
+ * specific language governing rights and limitations under the License. The 
+ * Original Code is ProjectLibre. The Original Developer is the Initial Developer 
+ * and is ProjectLibre Inc. All portions of the code written by ProjectLibre are 
+ * Copyright (c) 2012-2019. All Rights Reserved. All portions of the code written by 
+ * ProjectLibre are Copyright (c) 2012-2019. All Rights Reserved. Contributor 
+ * ProjectLibre, Inc.
+ *
+ * Alternatively, the contents of this file may be used under the terms of the 
+ * ProjectLibre End-User License Agreement (the ProjectLibre License) in which case 
+ * the provisions of the ProjectLibre License are applicable instead of those above. 
+ * If you wish to allow use of your version of this file only under the terms of the 
+ * ProjectLibre License and not to allow others to use your version of this file 
+ * under the CPAL, indicate your decision by deleting the provisions above and 
+ * replace them with the notice and other provisions required by the ProjectLibre 
+ * License. If you do not delete the provisions above, a recipient may use your 
+ * version of this file under either the CPAL or the ProjectLibre Licenses. 
+ *
+ *
+ * [NOTE: The text of this Exhibit A may differ slightly from the text of the notices 
+ * in the Source Code files of the Original Code. You should use the text of this 
+ * Exhibit A rather than the text found in the Original Code Source Code for Your 
+ * Modifications.] 
+ *
+ * EXHIBIT B. Attribution Information for ProjectLibre required
+ *
+ * Attribution Copyright Notice: Copyright (c) 2012-2019, ProjectLibre, Inc.
+ * Attribution Phrase (not exceeding 10 words): 
+ * ProjectLibre, open source project management software.
+ * Attribution URL: http://www.projectlibre.com
+ * Graphic Image as provided in the Covered Code as file: projectlibre-logo.png with 
+ * alternatives listed on http://www.projectlibre.com/logo 
+ *
+ * Display of Attribution Information is required in Larger Works which are defined 
+ * in the CPAL as a work which combines Covered Code or portions thereof with code 
+ * not governed by the terms of the CPAL. However, in addition to the other notice 
+ * obligations, all copies of the Covered Code in Executable and Source Code form 
+ * distributed must, as a form of attribution of the original author, include on 
+ * each user interface screen the "ProjectLibre" logo visible to all users. 
+ * The ProjectLibre logo should be located horizontally aligned with the menu bar 
+ * and left justified on the top left of the screen adjacent to the File menu. The 
+ * logo must be at least 144 x 31 pixels. When users click on the "ProjectLibre" 
+ * logo it must direct them back to http://www.projectlibre.com. 
+ *******************************************************************************/
+package com.projectlibre1.dialog;
+
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.text.MessageFormat;
+import java.util.List;
+import java.util.prefs.Preferences;
+
+import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JRadioButton;
+
+import com.jgoodies.forms.builder.DefaultFormBuilder;
+import com.jgoodies.forms.layout.FormLayout;
+import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
+import com.projectlibre1.pm.dependency.autolink.AutoLinkOptions;
+import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
+import com.projectlibre1.pm.dependency.autolink.RelinkSummary;
+import com.projectlibre1.pm.graphic.frames.GraphicManager;
+import com.projectlibre1.pm.task.Project;
+import com.projectlibre1.pm.task.Task;
+import com.projectlibre1.strings.Messages;
+import com.projectlibre1.util.Alert;
+
+/**
+ * Options of Re-link (docs/relink-design.md), with a preview of the links, the constraints and an estimated
+ * finish. The links of the activities use the options of Auto Link. The options are remembered.
+ * Returns the plan to apply, see AutoLinkPlan.
+ */
+public final class RelinkDialog extends AbstractDialog {
+	private static final long serialVersionUID = 1L;
+	private static final String PREF_SCOPE = "relinkScope"; //$NON-NLS-1$
+	private static final String PREF_READY_ORDER = "relinkReadyOrder"; //$NON-NLS-1$
+	private static final String PREF_ACTIVITIES = "relinkActivities"; //$NON-NLS-1$
+	private static final String PREF_JOIN = "relinkJoinConstraints"; //$NON-NLS-1$
+	private static final int MAX_CIRCULAR_TASKS_SHOWN = 5;
+	private static final int INDENT = 20; // pixels, for the help below an option
+
+	private final Preferences preferences = Preferences.userNodeForPackage(RelinkDialog.class);
+	private final Project project;
+	private final List<Task> selection;
+
+	JRadioButton wholeProject;
+	JRadioButton selectedTasks;
+	JRadioButton readyOrder;
+	JRadioButton wbsOrder;
+	JCheckBox linkActivities;
+	JCheckBox joinConstraints;
+	JLabel preview;
+	private AutoLinkPlan plan;
+
+	/**
+	 * @param selection the selected tasks, null or empty if none
+	 * @return the links and constraints to change, or null if cancelled
+	 */
+	public static AutoLinkPlan doDialog(Project project, List<Task> selection) {
+		RelinkDialog dialog = new RelinkDialog(project, selection);
+		return dialog.doModal() ? dialog.plan : null;
+	}
+
+	private RelinkDialog(Project project, List<Task> selection) {
+		super(GraphicManager.getFrameInstance(), Messages.getString("Relink.Title"), true); //$NON-NLS-1$
+		this.project = project;
+		this.selection = selection == null || selection.isEmpty() ? null : selection;
+		wholeProject = new JRadioButton(Messages.getString("AutoLink.WholeProject")); //$NON-NLS-1$
+		selectedTasks = new JRadioButton(Messages.getString("AutoLink.SelectedTasks")); //$NON-NLS-1$
+		ButtonGroup scope = new ButtonGroup();
+		scope.add(wholeProject);
+		scope.add(selectedTasks);
+		selectedTasks.setEnabled(this.selection != null);
+		if (this.selection != null && preferences.getBoolean(PREF_SCOPE, false))
+			selectedTasks.setSelected(true);
+		else
+			wholeProject.setSelected(true);
+		readyOrder = new JRadioButton(Messages.getString("Relink.ReadyOrder")); //$NON-NLS-1$
+		wbsOrder = new JRadioButton(Messages.getString("Relink.WbsOrder")); //$NON-NLS-1$
+		ButtonGroup order = new ButtonGroup();
+		order.add(readyOrder);
+		order.add(wbsOrder);
+		if (preferences.getBoolean(PREF_READY_ORDER, true))
+			readyOrder.setSelected(true);
+		else
+			wbsOrder.setSelected(true);
+		linkActivities = new JCheckBox(Messages.getString("Relink.LinkActivities"), preferences.getBoolean(PREF_ACTIVITIES, true)); //$NON-NLS-1$
+		joinConstraints = new JCheckBox(Messages.getString("Relink.JoinConstraints"), preferences.getBoolean(PREF_JOIN, true)); //$NON-NLS-1$
+		preview = new JLabel(" "); //$NON-NLS-1$
+
+		ActionListener listener = new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				updatePreview();
+			}
+		};
+		wholeProject.addActionListener(listener);
+		selectedTasks.addActionListener(listener);
+		readyOrder.addActionListener(listener);
+		wbsOrder.addActionListener(listener);
+		linkActivities.addActionListener(listener);
+		joinConstraints.addActionListener(listener);
+	}
+
+	protected boolean bind(boolean get) {
+		if (get)
+			return true;
+		updatePreview();
+		if (!plan.getCircularTasks().isEmpty()) {
+			Alert.error(circularMessage(), this);
+			return false;
+		}
+		preferences.putBoolean(PREF_SCOPE, selectedTasks.isSelected());
+		preferences.putBoolean(PREF_READY_ORDER, readyOrder.isSelected());
+		preferences.putBoolean(PREF_ACTIVITIES, linkActivities.isSelected());
+		preferences.putBoolean(PREF_JOIN, joinConstraints.isSelected());
+		return true;
+	}
+
+	public JComponent createContentPanel() {
+		updatePreview();
+		FormLayout layout = new FormLayout("300dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
+		builder.setDefaultDialogBorder();
+		builder.append(html(Messages.getString("Relink.Help"), 440)); //$NON-NLS-1$
+		builder.appendSeparator(Messages.getString("AutoLink.Scope")); //$NON-NLS-1$
+		builder.append(wholeProject);
+		builder.append(selectedTasks);
+		builder.appendSeparator(Messages.getString("Relink.Order")); //$NON-NLS-1$
+		builder.append(readyOrder);
+		builder.append(wbsOrder);
+		builder.appendSeparator(Messages.getString("AutoLink.Rules")); //$NON-NLS-1$
+		builder.append(linkActivities);
+		builder.append(joinConstraints);
+		builder.append(indented(html(Messages.getString("Relink.JoinHelp"), 420))); //$NON-NLS-1$
+		builder.appendSeparator(Messages.getString("AutoLink.Preview")); //$NON-NLS-1$
+		builder.append(preview);
+		return builder.getPanel();
+	}
+
+	private static JLabel html(String text, int width) {
+		return new JLabel("<html><div style='width:" + width + "px'>" + text + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	}
+
+	private static JComponent indented(JComponent component) {
+		component.setBorder(BorderFactory.createEmptyBorder(0, INDENT, 0, 0));
+		return component;
+	}
+
+	/** The options of Auto Link for the activities, and the sequences of the people */
+	private AutoLinkOptions options() {
+		AutoLinkOptions options = AutoLinkDialog.savedOptions();
+		options.setLinkActivities(linkActivities.isSelected());
+		options.setLinkSequences(true);
+		options.setRelink(true);
+		options.setReadyOrder(readyOrder.isSelected());
+		options.setJoinConstraints(joinConstraints.isSelected());
+		return options;
+	}
+
+	/** Always the same number of lines, so the dialog never needs resizing */
+	private void updatePreview() {
+		plan = AutoLinkPlan.create(project, selectedTasks.isSelected() ? selection : null, options());
+		int set = 0, removed = 0;
+		for (Long date : plan.getConstraints().values())
+			if (date == 0)
+				removed++;
+			else
+				set++;
+		StringBuilder text = new StringBuilder();
+		text.append(MessageFormat.format(Messages.getString("Relink.PreviewText"), //$NON-NLS-1$
+				String.valueOf(plan.getTaskCount()), String.valueOf(plan.getPeopleCount()), String.valueOf(plan.getToCreate().size()),
+				String.valueOf(plan.getToRemove().size()), String.valueOf(plan.getKept()), String.valueOf(plan.getExisting())));
+		text.append("<br>").append(MessageFormat.format(Messages.getString("Relink.PreviewTasks"), //$NON-NLS-1$ //$NON-NLS-2$
+				String.valueOf(set), String.valueOf(removed), String.valueOf(plan.getDelayed().size())));
+		text.append("<br>").append(plan.getEstimatedFinish() == 0 ? "&nbsp;" //$NON-NLS-1$ //$NON-NLS-2$
+				: RelinkSummary.finishText(project, plan.getEstimatedFinish(), "Relink.Estimate")); //$NON-NLS-1$
+		StringBuilder warnings = new StringBuilder();
+		if (plan.getUnassignedCount() > 0)
+			warnings.append(MessageFormat.format(Messages.getString("Relink.Unassigned"), String.valueOf(plan.getUnassignedCount()))).append(' '); //$NON-NLS-1$
+		if (plan.getUserConstraintCount() > 0)
+			warnings.append(MessageFormat.format(Messages.getString("Relink.UserConstraints"), String.valueOf(plan.getUserConstraintCount()))); //$NON-NLS-1$
+		text.append("<br>").append(warnings.length() == 0 ? "&nbsp;" : "<font color='#c06000'>" + warnings + "</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		text.append("<br>").append(plan.getCircularTasks().isEmpty() ? "&nbsp;" //$NON-NLS-1$ //$NON-NLS-2$
+				: "<font color='red'>" + Messages.getString("AutoLink.Circular") + "</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		preview.setText("<html><div style='width:440px'>" + text + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$
+	}
+
+	private String circularMessage() {
+		StringBuilder names = new StringBuilder();
+		List<Task> tasks = plan.getCircularTasks();
+		for (int i = 0; i < Math.min(MAX_CIRCULAR_TASKS_SHOWN, tasks.size()); i++)
+			names.append("\n- ").append(tasks.get(i).getId()).append(": ").append(tasks.get(i).getName()); //$NON-NLS-1$ //$NON-NLS-2$
+		return MessageFormat.format(Messages.getString("AutoLink.CircularError"), String.valueOf(tasks.size())) + names; //$NON-NLS-1$
+	}
+}

@@ -86,6 +86,9 @@ public class AutoLinkOptions {
 	private final Set<String> laneActivities;
 	private boolean linkActivities = true;
 	private boolean linkSequences = true;
+	private boolean relink = false;
+	private boolean readyOrder = true;
+	private boolean joinConstraints = true;
 	private String[] normalizedNames = null;
 
 	public AutoLinkOptions(String[] activities, int[] scopes, String[] laneActivities) {
@@ -149,5 +152,29 @@ public class AutoLinkOptions {
 	}
 	public void setLinkSequences(boolean linkSequences) {
 		this.linkSequences = linkSequences;
+	}
+	/**
+	 * Re-link (docs/relink-design.md): one sequence per person, whatever the activity, and none for the tasks not
+	 * assigned. The leveling delays of the tasks are removed, the dates come from the links
+	 */
+	public boolean isRelink() {
+		return relink;
+	}
+	public void setRelink(boolean relink) {
+		this.relink = relink;
+	}
+	/** Re-link: the tasks of a person in the order they can start (true), or in the order of the WBS */
+	public boolean isReadyOrder() {
+		return readyOrder;
+	}
+	public void setReadyOrder(boolean readyOrder) {
+		this.readyOrder = readyOrder;
+	}
+	/** Re-link: the first task of a person starts no earlier than the day the person is available */
+	public boolean isJoinConstraints() {
+		return joinConstraints;
+	}
+	public void setJoinConstraints(boolean joinConstraints) {
+		this.joinConstraints = joinConstraints;
 	}
 }
