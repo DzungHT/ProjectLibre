@@ -65,6 +65,9 @@ import java.awt.Graphics;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.StringSelection;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
@@ -86,6 +89,7 @@ import java.util.Set;
 import java.util.prefs.Preferences;
 
 import javax.swing.BorderFactory;
+import javax.swing.DropMode;
 import javax.swing.Icon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -95,10 +99,13 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
+import javax.swing.TransferHandler;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
@@ -107,6 +114,7 @@ import javax.swing.table.TableCellRenderer;
 
 import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.assignment.board.AssignmentBoard;
+import com.projectlibre1.pm.assignment.board.SuggestOptions;
 import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.pm.graphic.frames.GraphicManager;
 import com.projectlibre1.pm.resource.Resource;
@@ -125,9 +133,9 @@ import com.projectlibre1.strings.Messages;
 public final class AssignmentBoardDialog extends AbstractDialog {
 	private static final long serialVersionUID = 1L;
 	// columns of the tasks
-	private static final int T_NAME = 0, T_ACTIVITY = 1, T_ROLE = 2, T_SKILL = 3, T_EFFORT = 4, T_PEOPLE = 5, T_ISSUES = 6;
-	private static final String[] T_HEADERS = { "Task", "Activity", "Role", "Skill", "Effort", "People", "Issues" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
-	private static final int[] T_WIDTHS = { 300, 45, 55, 45, 60, 150, 120 };
+	private static final int T_LOCK = 0, T_NAME = 1, T_ACTIVITY = 2, T_ROLE = 3, T_SKILL = 4, T_EFFORT = 5, T_PEOPLE = 6, T_SUGGESTION = 7, T_ISSUES = 8;
+	private static final String[] T_HEADERS = { "LockColumn", "Task", "Activity", "Role", "Skill", "Effort", "People", "Suggestion", "Issues" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$
+	private static final int[] T_WIDTHS = { 22, 270, 45, 55, 45, 55, 130, 130, 120 };
 	// columns of the people
 	private static final int P_NAME = 0, P_ROLE = 1, P_SKILL = 2, P_LEVEL = 3, P_FROM = 4, P_TO = 5, P_TASKS = 6, P_ASSIGNED = 7, P_CAPACITY = 8, P_LOAD = 9;
 	private static final String[] P_HEADERS = { "Person", "Role", "Skill", "Level", "From", "To", "TaskCount", "Assigned", "Capacity", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$ //$NON-NLS-10$
@@ -142,12 +150,17 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 	private static final Color WARNING_COLOR = new Color(0xb2, 0x6a, 0x00), FAILED_COLOR = new Color(0xc0, 0x00, 0x00);
 	private static final Color BAR_OK = new Color(0x4a, 0x90, 0xd9), BAR_WARNING = new Color(0xf0, 0xa0, 0x30), BAR_FAILED = new Color(0xd9, 0x40, 0x40);
 	private static final Color HIGHLIGHT = new Color(0xff, 0xf2, 0xc4), CHANGED = new Color(0x00, 0x55, 0xcc), DIMMED = new Color(0xa0, 0xa0, 0xa0);
+	private static final Color SUGGESTED = new Color(0x2e, 0x7d, 0x32), SUGGESTED_BAR = new Color(0xa5, 0xd6, 0xa7);
 
 	private final AssignmentBoard board;
+	private final SuggestOptions suggestOptions = SuggestOptions.load();
 	private final DateFormat dateFormat = EditOption.getInstance().getShortDateFormat();
 	private final NumberFormat decimal = NumberFormat.getNumberInstance();
 	private final Icon warningIcon = IconManager.getIcon("indicator.availability"); //$NON-NLS-1$
+	private final Icon lockIcon = new LockIcon(false), partLockIcon = new LockIcon(true);
 	private int unit = DEFAULT_UNIT;
+	/** What the last action did not do, shown after the status until the next action, "" for nothing */
+	private String note = ""; //$NON-NLS-1$
 
 	/** The rows shown: the filter passed, below the summaries not collapsed */
 	private final List<AssignmentBoard.Row> rows = new ArrayList<AssignmentBoard.Row>();
@@ -160,6 +173,8 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 	private JLabel status;
 	/** The tasks selected, kept when the rows are shown again; the tasks they give with the filter */
 	private List<AssignmentBoard.Row> selectedRows = new ArrayList<AssignmentBoard.Row>();
+	/** The rows selected, to know if a task is below a summary selected */
+	private Set<AssignmentBoard.Row> selectedSet = Collections.newSetFromMap(new IdentityHashMap<AssignmentBoard.Row, Boolean>());
 	private List<AssignmentBoard.Row> selectedTasks = new ArrayList<AssignmentBoard.Row>();
 	private boolean updating = false;
 
@@ -315,6 +330,22 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			public void actionPerformed(ActionEvent e) {
 				unassign();
 			}
+		}), separator(), button("AssignmentBoard.Suggest", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				suggest();
+			}
+		}), button("AssignmentBoard.Accept", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				accept();
+			}
+		}), separator(), button("AssignmentBoard.Lock", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				lock(true);
+			}
+		}), button("AssignmentBoard.Unlock", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				lock(false);
+			}
 		}));
 		JPanel closing = flow(button("AssignmentBoard.Apply", new ActionListener() { //$NON-NLS-1$
 			public void actionPerformed(ActionEvent e) {
@@ -349,6 +380,12 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 
 	private static JLabel label(String key) {
 		return new JLabel(Messages.getString(key));
+	}
+
+	private static JComponent separator() {
+		JSeparator separator = new JSeparator(SwingConstants.VERTICAL);
+		separator.setPreferredSize(new Dimension(2, 22));
+		return separator;
 	}
 
 	private static JButton button(String key, ActionListener listener) {
@@ -440,6 +477,8 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		selectedRows = new ArrayList<AssignmentBoard.Row>();
 		for (int index : taskTable.getSelectedRows())
 			selectedRows.add(rows.get(index));
+		selectedSet = Collections.newSetFromMap(new IdentityHashMap<AssignmentBoard.Row, Boolean>());
+		selectedSet.addAll(selectedRows);
 		selectedTasks = filtered(selectedRows);
 		personModel.fireTableRowsUpdated(0, Math.max(0, persons.size() - 1)); // the people who cannot do them are dimmed
 		showStatus();
@@ -466,11 +505,13 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		int total = board.getActivities().size(), unassigned = board.getUnassignedCount();
 		status.setText(MessageFormat.format(Messages.getString("AssignmentBoard.Status"), String.valueOf(total - unassigned), //$NON-NLS-1$
 				String.valueOf(total), String.valueOf(unassigned), String.valueOf(board.getIssueCount()),
-				String.valueOf(board.getChangedRows().size()), String.valueOf(selectedTasks.size())));
+				String.valueOf(board.getChangedRows().size()), String.valueOf(selectedTasks.size()),
+				String.valueOf(board.getSuggestionCount()), String.valueOf(board.getLockedCount())) + note);
 	}
 
-	/** After a change of the people: the loads, the rows and the people */
-	private void changed() {
+	/** After a change of the people: the loads, the rows and the people. Shows a note on the locked tasks kept */
+	private void changed(int kept) {
+		note = kept == 0 ? "" : MessageFormat.format(Messages.getString("AssignmentBoard.LockedKept"), String.valueOf(kept)); //$NON-NLS-1$ //$NON-NLS-2$
 		board.calculate();
 		showRows();
 		personModel.fireTableRowsUpdated(0, Math.max(0, persons.size() - 1));
@@ -486,7 +527,7 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		return false;
 	}
 
-	/** Gives the tasks selected to the person selected, after asking if some are not of its role or skill */
+	/** Gives the tasks selected to the person selected */
 	private void assignSelected() {
 		if (!checkTasks())
 			return;
@@ -495,22 +536,135 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			JOptionPane.showMessageDialog(this, Messages.getString("AssignmentBoard.ChoosePerson"), getTitle(), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
 			return;
 		}
+		assignTo(person);
+	}
+
+	/** Gives the tasks selected to a person, after asking if some are not of its role or skill. Below a summary selected,
+	 * only the tasks the person can do go to it, the others keep their people */
+	private void assignTo(AssignmentBoard.Person person) {
+		List<AssignmentBoard.Row> tasks = tasksFor(person);
+		if (tasks.isEmpty()) {
+			JOptionPane.showMessageDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.NoTaskFits"), person.getName()), //$NON-NLS-1$
+					getTitle(), JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
 		int wrong = 0;
-		for (AssignmentBoard.Row row : selectedTasks)
+		for (AssignmentBoard.Row row : tasks)
 			if (!AssignmentBoard.canDo(person, row))
 				wrong++;
 		if (wrong > 0 && JOptionPane.showConfirmDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.ConfirmMismatch"), //$NON-NLS-1$
 				String.valueOf(wrong), person.getName()), getTitle(), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
 			return;
-		board.assign(selectedTasks, person.getResource());
-		changed();
+		int skipped = selectedTasks.size() - tasks.size();
+		changed(board.assign(tasks, person.getResource()));
+		if (skipped > 0) {
+			note += MessageFormat.format(Messages.getString("AssignmentBoard.OthersKept"), String.valueOf(skipped), person.getName()); //$NON-NLS-1$
+			showStatus();
+		}
+	}
+
+	/** The tasks selected that go to a person: the tasks selected themselves, and below a summary selected only the
+	 * tasks the person can do (its role, and its skill when the task needs one) */
+	private List<AssignmentBoard.Row> tasksFor(AssignmentBoard.Person person) {
+		List<AssignmentBoard.Row> result = new ArrayList<AssignmentBoard.Row>();
+		for (AssignmentBoard.Row row : selectedTasks)
+			if (!belowSelectedSummary(row) || AssignmentBoard.canDo(person, row))
+				result.add(row);
+		return result;
+	}
+
+	private boolean belowSelectedSummary(AssignmentBoard.Row row) {
+		for (AssignmentBoard.Row parent = row.getParent(); parent != null; parent = parent.getParent())
+			if (selectedSet.contains(parent))
+				return true;
+		return false;
 	}
 
 	private void unassign() {
 		if (!checkTasks())
 			return;
-		board.assign(selectedTasks, null);
-		changed();
+		changed(board.assign(selectedTasks, null));
+	}
+
+	/** Asks the options of the suggestions, then suggests a person for the tasks without people and not locked */
+	private void suggest() {
+		final JCheckBox keepFunction = new JCheckBox(Messages.getString("AssignmentBoard.KeepFunction")); //$NON-NLS-1$
+		final JCheckBox keepCluster = new JCheckBox(Messages.getString("AssignmentBoard.KeepCluster")); //$NON-NLS-1$
+		final JCheckBox preferExisting = new JCheckBox(Messages.getString("AssignmentBoard.PreferExisting")); //$NON-NLS-1$
+		keepFunction.setSelected(suggestOptions.isKeepFunction());
+		keepCluster.setSelected(suggestOptions.isKeepCluster());
+		preferExisting.setSelected(suggestOptions.isPreferExisting());
+		JButton defaults = new JButton(Messages.getString("ResourcePlan.Defaults")); //$NON-NLS-1$
+		defaults.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				SuggestOptions d = new SuggestOptions();
+				keepFunction.setSelected(d.isKeepFunction());
+				keepCluster.setSelected(d.isKeepCluster());
+				preferExisting.setSelected(d.isPreferExisting());
+			}
+		});
+		JPanel panel = new JPanel(new GridBagLayout());
+		GridBagConstraints c = new GridBagConstraints();
+		c.insets = new Insets(3, 3, 3, 3);
+		c.anchor = GridBagConstraints.WEST;
+		c.gridx = 0;
+		c.gridy = GridBagConstraints.RELATIVE;
+		panel.add(new JLabel("<html><div style='width:420px'>" + Messages.getString("AssignmentBoard.SuggestHelp") + "</div></html>"), c); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		panel.add(keepFunction, c);
+		panel.add(keepCluster, c);
+		panel.add(preferExisting, c);
+		panel.add(defaults, c);
+		if (JOptionPane.showConfirmDialog(this, panel, Messages.getString("AssignmentBoard.Suggest"), JOptionPane.OK_CANCEL_OPTION, //$NON-NLS-1$
+				JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION)
+			return;
+		suggestOptions.setKeepFunction(keepFunction.isSelected());
+		suggestOptions.setKeepCluster(keepCluster.isSelected());
+		suggestOptions.setPreferExisting(preferExisting.isSelected());
+		suggestOptions.save();
+		board.suggest(suggestOptions);
+		changed(0);
+	}
+
+	/** The suggestions of the tasks selected become their people, or the ones of all the tasks if none is selected */
+	private void accept() {
+		List<AssignmentBoard.Row> tasks = selectedTasks.isEmpty() ? board.getActivities() : selectedTasks;
+		int suggested = 0;
+		for (AssignmentBoard.Row row : tasks)
+			if (row.getSuggestion() != null && !row.isLocked())
+				suggested++;
+		if (suggested == 0) {
+			JOptionPane.showMessageDialog(this, Messages.getString("AssignmentBoard.NoSuggestion"), getTitle(), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
+			return;
+		}
+		if (selectedTasks.isEmpty() && JOptionPane.showConfirmDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.AcceptAll"), //$NON-NLS-1$
+				String.valueOf(suggested)), getTitle(), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+			return;
+		board.acceptSuggestions(tasks);
+		changed(0);
+	}
+
+	private void lock(boolean locked) {
+		if (!checkTasks())
+			return;
+		board.setLocked(selectedTasks, locked);
+		changed(0);
+	}
+
+	/** Locks a task, or the tasks below a summary that pass the filters, or unlocks them if they all are */
+	private void toggleLock(AssignmentBoard.Row row) {
+		List<AssignmentBoard.Row> tasks = filtered(Collections.singletonList(row));
+		board.setLocked(tasks, lockState(tasks) != ALL_LOCKED);
+		changed(0);
+	}
+
+	private static final int NONE_LOCKED = 0, SOME_LOCKED = 1, ALL_LOCKED = 2;
+
+	private static int lockState(List<AssignmentBoard.Row> tasks) {
+		int locked = 0;
+		for (AssignmentBoard.Row task : tasks)
+			if (task.isLocked())
+				locked++;
+		return locked == 0 ? NONE_LOCKED : locked == tasks.size() ? ALL_LOCKED : SOME_LOCKED;
 	}
 
 	/**
@@ -558,10 +712,11 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		if (JOptionPane.showConfirmDialog(this, panel, Messages.getString("AssignmentBoard.AssignCluster"), JOptionPane.OK_CANCEL_OPTION, //$NON-NLS-1$
 				JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION)
 			return;
+		int kept = 0;
 		for (Map.Entry<String, JComboBox> choice : choices.entrySet())
 			if (choice.getValue().getSelectedItem() instanceof PersonChoice)
-				board.assign(groups.get(choice.getKey()), ((PersonChoice) choice.getValue().getSelectedItem()).person.getResource());
-		changed();
+				kept += board.assign(groups.get(choice.getKey()), ((PersonChoice) choice.getValue().getSelectedItem()).person.getResource());
+		changed(kept);
 	}
 
 	/** A person in a list: its name and its load */
@@ -582,7 +737,10 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 	}
 
 	private static String load(AssignmentBoard.Person person) {
-		double load = person.getLoad();
+		return percent(person.getLoad());
+	}
+
+	private static String percent(double load) {
 		return Double.isInfinite(load) ? "∞ %" : Math.round(load) + "%"; //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
@@ -605,6 +763,17 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			return AssignmentBoard.names(list);
 		return AssignmentBoard.names(list.subList(0, MAX_NAMES)) + MessageFormat.format(Messages.getString("AssignmentBoard.Others"), //$NON-NLS-1$
 				String.valueOf(list.size() - MAX_NAMES));
+	}
+
+	/** Person suggested for a task, or the number of suggestions below a summary */
+	private static String suggestion(AssignmentBoard.Row row) {
+		if (row.isActivity())
+			return row.getSuggestion() == null ? "" : row.getSuggestion().getName(); //$NON-NLS-1$
+		int count = 0;
+		for (AssignmentBoard.Row task : AssignmentBoard.activities(Collections.singletonList(row)))
+			if (task.getSuggestion() != null)
+				count++;
+		return count == 0 ? "" : MessageFormat.format(Messages.getString("AssignmentBoard.SummarySuggestions"), String.valueOf(count)); //$NON-NLS-1$ //$NON-NLS-2$
 	}
 
 	/** The issues of a task, or the number of tasks not assigned and with issues below a summary */
@@ -651,12 +820,14 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			public Object getValueAt(int index, int column) {
 				AssignmentBoard.Row row = rows.get(index);
 				switch (column) {
+				case T_LOCK: return ""; // an icon, see TaskRenderer //$NON-NLS-1$
 				case T_NAME: return row.getTask().getName();
 				case T_ACTIVITY: return row.isActivity() ? row.getTask().getActivity() : ""; //$NON-NLS-1$
 				case T_ROLE: return row.isActivity() ? row.getRole() : ""; //$NON-NLS-1$
 				case T_SKILL: return row.isActivity() ? row.getSkill() : ""; //$NON-NLS-1$
 				case T_EFFORT: return decimal.format((row.isActivity() ? row.getHours() : hours(filtered(Collections.singletonList(row)))) / UNIT_HOURS[unit]);
 				case T_PEOPLE: return people(row);
+				case T_SUGGESTION: return suggestion(row);
 				case T_ISSUES: return issues(row);
 				default: return null;
 				}
@@ -674,7 +845,9 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 					List<String> issues = board.getIssues(row);
 					return issues.isEmpty() ? null : html(issues);
 				}
-				if (c == T_PEOPLE || c == T_ISSUES || c == T_NAME) {
+				if (c == T_LOCK)
+					return Messages.getString("AssignmentBoard.LockTooltip"); //$NON-NLS-1$
+				if (c == T_PEOPLE || c == T_SUGGESTION || c == T_ISSUES || c == T_NAME) {
 					Object value = getValueAt(index, column);
 					return value == null || value.toString().length() == 0 ? null : value.toString();
 				}
@@ -701,6 +874,10 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 				if (index < 0 || column < 0)
 					return;
 				AssignmentBoard.Row row = rows.get(index);
+				if (taskTable.convertColumnIndexToModel(column) == T_LOCK) {
+					toggleLock(row);
+					return;
+				}
 				if (row.isActivity())
 					return;
 				boolean onArrow = taskTable.convertColumnIndexToModel(column) == T_NAME
@@ -712,6 +889,48 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 				}
 			}
 		});
+		// the tasks selected are dragged onto a person of the other table
+		taskTable.setDragEnabled(true);
+		taskTable.setTransferHandler(new TransferHandler() {
+			private static final long serialVersionUID = 1L;
+			public int getSourceActions(JComponent c) {
+				return selectedTasks.isEmpty() ? NONE : MOVE;
+			}
+			protected Transferable createTransferable(JComponent c) {
+				return new StringSelection(TASKS_FLAVOR);
+			}
+		});
+	}
+
+	/** Text of the tasks dragged: the tasks are the ones selected */
+	private static final String TASKS_FLAVOR = "AssignmentBoard.tasks"; //$NON-NLS-1$
+
+	/** Drops the tasks dragged from the table of the tasks onto a person: they go to the person */
+	private class PersonDropHandler extends TransferHandler {
+		private static final long serialVersionUID = 1L;
+		public boolean canImport(TransferSupport support) {
+			if (!support.isDrop() || !support.isDataFlavorSupported(DataFlavor.stringFlavor))
+				return false;
+			JTable.DropLocation location = (JTable.DropLocation) support.getDropLocation();
+			return location.getRow() >= 0 && location.getRow() < persons.size();
+		}
+		public boolean importData(TransferSupport support) {
+			if (!canImport(support))
+				return false;
+			try {
+				if (!TASKS_FLAVOR.equals(support.getTransferable().getTransferData(DataFlavor.stringFlavor)))
+					return false;
+			} catch (Exception e) {
+				return false;
+			}
+			final AssignmentBoard.Person person = persons.get(((JTable.DropLocation) support.getDropLocation()).getRow());
+			SwingUtilities.invokeLater(new Runnable() { // after the drop, so that a question can be asked
+				public void run() {
+					assignTo(person);
+				}
+			});
+			return true;
+		}
 	}
 
 	private static double hours(List<AssignmentBoard.Row> list) {
@@ -743,8 +962,14 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			AssignmentBoard.Row row = rows.get(index);
 			int c = table.convertColumnIndexToModel(column);
 			label.setIcon(null);
-			label.setHorizontalAlignment(c == T_EFFORT ? SwingConstants.RIGHT : SwingConstants.LEFT);
+			label.setHorizontalAlignment(c == T_EFFORT ? SwingConstants.RIGHT : c == T_LOCK ? SwingConstants.CENTER : SwingConstants.LEFT);
 			label.setFont(row.isActivity() ? table.getFont() : table.getFont().deriveFont(Font.BOLD));
+			if (c == T_LOCK) {
+				int state = lockState(row.isActivity() ? Collections.singletonList(row) : filtered(Collections.singletonList(row)));
+				label.setIcon(state == ALL_LOCKED ? lockIcon : state == SOME_LOCKED ? partLockIcon : null);
+			}
+			if (c == T_SUGGESTION && row.isActivity())
+				label.setFont(table.getFont().deriveFont(Font.ITALIC));
 			if (c == T_NAME) {
 				String arrow = row.isActivity() ? "    " : collapsed.contains(row) ? "▸ " : "▾ "; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				label.setText(arrow + value);
@@ -754,8 +979,8 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 				label.setIcon(warningIcon);
 			if (!isSelected) {
 				label.setBackground(ofSelectedPerson(row) ? HIGHLIGHT : table.getBackground());
-				label.setForeground(c == T_PEOPLE && row.isActivity() && row.isChanged() ? CHANGED
-						: c == T_ISSUES ? WARNING_COLOR : table.getForeground());
+				label.setForeground(c == T_PEOPLE && row.isActivity() && row.isPeopleChanged() ? CHANGED
+						: c == T_SUGGESTION ? SUGGESTED : c == T_ISSUES ? WARNING_COLOR : table.getForeground());
 			}
 			return label;
 		}
@@ -802,12 +1027,17 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 				String issue = board.getIssue(person);
 				if (issue != null)
 					lines.add(issue);
+				if (person.getSuggestedHours() > 0)
+					lines.add(MessageFormat.format(Messages.getString("AssignmentBoard.SuggestedLoad"), effort(person.getSuggestedHours()), //$NON-NLS-1$
+							percent(person.getLoadWithSuggestions())));
 				if (!canDoSelected(person))
 					lines.add(Messages.getString("AssignmentBoard.CannotDo")); //$NON-NLS-1$
 				return html(lines);
 			}
 		};
 		personTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		personTable.setDropMode(DropMode.ON);
+		personTable.setTransferHandler(new PersonDropHandler());
 		personTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		personTable.getTableHeader().setReorderingAllowed(false);
 		for (int i = 0; i < P_WIDTHS.length; i++)
@@ -829,9 +1059,12 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		});
 	}
 
-	/** True if a person can do all the tasks selected (or if none is selected) */
+	/** True if a person can do all the tasks selected that would go to it, and at least one (or if none is selected) */
 	private boolean canDoSelected(AssignmentBoard.Person person) {
-		for (AssignmentBoard.Row row : selectedTasks)
+		List<AssignmentBoard.Row> tasks = tasksFor(person);
+		if (tasks.isEmpty())
+			return selectedTasks.isEmpty();
+		for (AssignmentBoard.Row row : tasks)
 			if (!AssignmentBoard.canDo(person, row))
 				return false;
 		return true;
@@ -852,10 +1085,13 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		}
 	}
 
-	/** The load of a person as a bar: blue within the warning threshold, orange over it, red over the limit */
+	/**
+	 * The load of a person as a bar: blue within the warning threshold, orange over it, red over the limit. The effort
+	 * suggested is a lighter part after it, and its load is shown after an arrow
+	 */
 	private class LoadRenderer extends JComponent implements TableCellRenderer {
 		private static final long serialVersionUID = 1L;
-		private double load;
+		private double load, loadWithSuggestions;
 		private int loadStatus;
 		private String text;
 		private boolean selected, dimmed;
@@ -863,8 +1099,11 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int index, int column) {
 			AssignmentBoard.Person person = persons.get(index);
 			load = person.getLoad();
+			loadWithSuggestions = person.getLoadWithSuggestions();
 			loadStatus = person.getCapacityHours() <= 0 && person.getAssignedHours() > 0 ? AssignmentBoard.FAILED : board.getStatus(person);
 			text = value == null ? "" : value.toString(); //$NON-NLS-1$
+			if (person.getSuggestedHours() > 0)
+				text += " → " + percent(loadWithSuggestions); //$NON-NLS-1$
 			selected = isSelected;
 			dimmed = !canDoSelected(person);
 			background = table.getBackground();
@@ -878,19 +1117,49 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 			int w = getWidth(), h = getHeight();
 			g.setColor(selected ? selectionBackground : background);
 			g.fillRect(0, 0, w, h);
-			int barWidth = w - 50;
+			g.setFont(getFont());
+			int textWidth = g.getFontMetrics().stringWidth(text);
+			int barWidth = w - textWidth - 12;
 			if (barWidth > 10) {
-				double ratio = Double.isInfinite(load) ? 1 : Math.min(1, load / 100);
+				double ratio = ratio(load), ratioWith = ratio(loadWithSuggestions);
 				g.setColor(new Color(0xe6, 0xe6, 0xe6));
 				g.fillRect(3, 4, barWidth, h - 8);
+				g.setColor(SUGGESTED_BAR);
+				g.fillRect(3, 4, (int) Math.round(barWidth * ratioWith), h - 8);
 				g.setColor(loadStatus == AssignmentBoard.FAILED ? BAR_FAILED : loadStatus == AssignmentBoard.WARNING ? BAR_WARNING : BAR_OK);
 				g.fillRect(3, 4, (int) Math.round(barWidth * ratio), h - 8);
 			}
-			g.setFont(getFont());
 			g.setColor(selected ? selectionForeground : loadStatus == AssignmentBoard.FAILED ? FAILED_COLOR
 					: loadStatus == AssignmentBoard.WARNING ? WARNING_COLOR : dimmed ? DIMMED : foreground);
-			int textWidth = g.getFontMetrics().stringWidth(text);
 			g.drawString(text, w - textWidth - 4, (h + g.getFontMetrics().getAscent() - g.getFontMetrics().getDescent()) / 2);
+		}
+	}
+
+	private static double ratio(double load) {
+		return Double.isInfinite(load) ? 1 : Math.min(1, load / 100);
+	}
+
+	/** A padlock, gray when only some tasks below a summary are locked */
+	private static class LockIcon implements Icon {
+		private final boolean partial;
+		LockIcon(boolean partial) {
+			this.partial = partial;
+		}
+		public int getIconWidth() {
+			return 12;
+		}
+		public int getIconHeight() {
+			return 13;
+		}
+		public void paintIcon(Component c, Graphics g, int x, int y) {
+			Color color = partial ? new Color(0xa0, 0xa0, 0xa0) : new Color(0x55, 0x55, 0x55);
+			g.setColor(color);
+			g.drawArc(x + 3, y + 1, 6, 8, 0, 180); // the shackle
+			g.drawLine(x + 3, y + 5, x + 3, y + 6);
+			g.drawLine(x + 9, y + 5, x + 9, y + 6);
+			g.fillRect(x + 1, y + 6, 11, 7); // the body
+			g.setColor(Color.WHITE);
+			g.fillRect(x + 6, y + 8, 1, 3); // the keyhole
 		}
 	}
 }
