@@ -147,13 +147,20 @@ Gợi ý không tính ngày, nên có thể đề xuất một người làm nhi
 
 ## 6. Thao tác hàng loạt (A3)
 
-- **Thay người:** chuyển tất cả task (hoặc chỉ task chưa khoá) của người A sang người B. Dùng khi đã tuyển được người
-  thật cho một chỗ TBD. Sau đó resource TBD không còn phân công, lần Apply Resource Plan sau sẽ tự xoá (Resource Plan
-  mục 5).
-- **Chuyển bớt việc:** với người đang vượt ngưỡng, chuyển task từ cuối WBS (theo cụm chức năng) sang người cùng
-  role/kỹ năng có tải thấp nhất, tới khi về trong ngưỡng. Hiện trước danh sách sẽ chuyển, người dùng xác nhận.
-- **Xuất Excel** (`XlsxSheetWriter`): sheet *Phân công* (module, chức năng, activity, role, kỹ năng, effort, người) và
-  sheet *Tải* (người, role, level, khoảng, năng lực, đã giao, tải).
+- **Thay người...:** chuyển tất cả task chưa khoá của người A (người đang chọn bên phải) sang người B cùng role. Tuỳ
+  chọn *Cả các task đã khoá* chuyển luôn task khoá (vẫn giữ khoá). Task nhiều người thì chỉ thay A, giữ người kia; đề
+  xuất cho A cũng chuyển sang B. Dùng khi đã tuyển được người thật cho một chỗ TBD. Sau đó resource TBD không còn phân
+  công, lần Apply Resource Plan sau sẽ tự xoá (Resource Plan mục 5).
+- **Chuyển bớt việc...:** với người đang chọn (không chọn ai thì mọi người vượt ngưỡng cảnh báo thiếu), lấy task từ
+  cuối WBS theo cụm chức năng: các task cùng role/kỹ năng của một chức năng về cùng một người, là người cùng
+  role/kỹ năng có tải thấp nhất mà sau khi nhận vẫn trong ngưỡng; chức năng không ai nhận trọn thì chuyển từng task.
+  Dừng khi người đó về trong ngưỡng. Chỉ chuyển task của riêng người đó và chưa khoá. Hiện trước danh sách sẽ chuyển
+  (task, chức năng, effort, từ, sang) và tải trước → sau của từng người, người dùng xác nhận. Không ai còn chỗ thì báo
+  (cần thêm người ở Resource Plan).
+- **Xuất Excel...** (`XlsxSheetWriter`, ghi được nhiều sheet): xuất đúng như hộp thoại đang hiện, kể cả thay đổi
+  chưa Apply, effort theo đơn vị đang chọn. Sheet *Phân công*: ID, module (cấp đầu WBS), chức năng, task, activity,
+  role, kỹ năng, effort, người làm, đề xuất, khoá, cảnh báo. Sheet *Tải*: người, TBD, role, kỹ năng, level, từ, đến,
+  Max Units, năng lực, đã giao, số task, tải, cảnh báo. Số ghi dạng số, có filter.
 
 ## 7. Ghi vào dự án
 
@@ -184,7 +191,8 @@ Dạng icon (không popup), trong hộp thoại và ở cột Indicators của b
 | Quá tải | Tải của người vượt ngưỡng (cam/đỏ) | Bên phải hộp thoại |
 | Không có năng lực | Người không có khoảng nào Max Units > 0 | Bên phải hộp thoại |
 
-Tooltip ghi lý do cụ thể (ví dụ: *cần BE, DEV J #2 chỉ có FE*).
+Tooltip ghi lý do cụ thể (ví dụ: *cần BE, DEV J #2 chỉ có FE*). Ở bảng task, icon riêng (người + tam giác cam) chỉ hiện
+với task hoạt động chưa hoàn thành, chưa cancel; tính lại mỗi lần vẽ từ phân công hiện có, không cần mở hộp thoại.
 
 ## 9. Lộ trình
 

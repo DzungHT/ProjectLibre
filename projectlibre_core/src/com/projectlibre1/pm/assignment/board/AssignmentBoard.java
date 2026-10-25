@@ -70,6 +70,7 @@ import java.util.Set;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.resource.Resource;
 import com.projectlibre1.pm.resource.ResourceImpl;
+import com.projectlibre1.pm.resource.labor.LaborCatalog;
 import com.projectlibre1.pm.resource.labor.SkillCatalog;
 import com.projectlibre1.pm.resource.plan.ResourcePlan;
 import com.projectlibre1.pm.resource.plan.ResourcePlanOptions;
@@ -168,6 +169,13 @@ public class AssignmentBoard {
 		/** Skills, "" for none: a developer without skill does any development, as in the Resource Plan */
 		public String getSkill() { return line.getSkill(); }
 		public int getLevel() { return line.getLevel(); }
+		/** Code of the level in the labor catalog, "" if not set */
+		public String getLevelCode() {
+			if (getLevel() < 0)
+				return ""; //$NON-NLS-1$
+			LaborCatalog.Category category = LaborCatalog.getInstance().find(getRole(), getLevel());
+			return category == null ? LaborCatalog.levelAbbreviation(getLevel()) : category.getLevelCode();
+		}
 		public boolean isExisting() { return line.isExisting(); }
 		/** Period of the person in the plan */
 		public long getFrom() { return line.getFrom(); }
@@ -484,6 +492,131 @@ public class AssignmentBoard {
 		return count;
 	}
 
+	/**
+	 * Gives the tasks of a person to another one, as when a real person is found for a TBD one. A task of several
+	 * people keeps the others. The suggestions of the person go to the other one too
+	 * @param withLocked true to move the locked tasks too, which stay locked
+	 * @return the number of tasks moved, and of locked tasks kept
+	 */
+	public int[] replace(Person from, Person to, boolean withLocked) {
+		int moved = 0, kept = 0;
+		for (Row row : activities) {
+			if (row.suggestion == from.resource)
+				row.suggestion = to.resource;
+			int index = row.resources.indexOf(from.resource);
+			if (index < 0)
+				continue;
+			if (row.locked && !withLocked) {
+				kept++;
+				continue;
+			}
+			if (row.resources.contains(to.resource))
+				row.resources.remove(index);
+			else
+				row.resources.set(index, to.resource);
+			moved++;
+		}
+		calculate();
+		return new int[] { moved, kept };
+	}
+
+	/** A task to give from a person to another one, see planOffload() */
+	public static class Move {
+		private final Row row;
+		private final Person from, to;
+		Move(Row row, Person from, Person to) {
+			this.row = row;
+			this.from = from;
+			this.to = to;
+		}
+		public Row getRow() { return row; }
+		public Person getFrom() { return from; }
+		public Person getTo() { return to; }
+	}
+
+	/** True if the load of a person is over the shortage warning of the Resource Plan */
+	public boolean isOverloaded(Person person) {
+		return getStatus(person) != OK;
+	}
+
+	/**
+	 * The tasks to move from the people over the shortage warning to the people of their role and skill with the
+	 * lowest load, until they are within it. The tasks of a person (alone, not locked) are taken by function from
+	 * the end of the WBS, and the tasks of a role and skill in a function go to a single person whose load stays
+	 * within the warning once they are added. A function no one can take is moved task by task. Nothing is changed:
+	 * applyMoves() does it
+	 */
+	public List<Move> planOffload(Collection<Person> people) {
+		Map<Person, Double> hours = new IdentityHashMap<Person, Double>();
+		for (Person person : persons)
+			hours.put(person, person.assignedHours);
+		List<Move> moves = new ArrayList<Move>();
+		for (Person from : people) {
+			if (!over(from, hours))
+				continue;
+			Map<Object, List<Row>> groups = new LinkedHashMap<Object, List<Row>>();
+			for (Row row : activities) {
+				if (row.locked || row.resources.size() != 1 || row.resources.get(0) != from.resource)
+					continue;
+				List<Object> key = new ArrayList<Object>();
+				key.add(row.parent == null ? row : row.parent);
+				key.add(ResourcePlan.key(row.role, row.skill));
+				List<Row> group = groups.get(key);
+				if (group == null)
+					groups.put(key, group = new ArrayList<Row>());
+				group.add(row);
+			}
+			List<List<Row>> functions = new ArrayList<List<Row>>(groups.values());
+			Collections.reverse(functions);
+			for (List<Row> group : functions) {
+				if (!over(from, hours))
+					break;
+				if (move(group, from, hours, moves))
+					continue;
+				for (int i = group.size() - 1; i >= 0 && over(from, hours); i--)
+					move(Collections.singletonList(group.get(i)), from, hours, moves);
+			}
+		}
+		return moves;
+	}
+
+	/** Moves tasks of a person to the one of their role and skill with the lowest load, if it stays within the warning */
+	private boolean move(List<Row> group, Person from, Map<Person, Double> hours, List<Move> moves) {
+		Row first = group.get(0);
+		double added = hours(group);
+		List<Person> candidates = new ArrayList<Person>();
+		for (Person person : persons)
+			if (person != from && canDo(person, first) && person.getCapacityHours() > EPSILON)
+				candidates.add(person);
+		Person to = lowest(withTime(candidates, added, hours), first, added, hours);
+		if (to == null)
+			return false;
+		for (Row row : group)
+			moves.add(new Move(row, from, to));
+		hours.put(from, hours.get(from) - added);
+		hours.put(to, hours.get(to) + added);
+		return true;
+	}
+
+	private boolean over(Person person, Map<Person, Double> hours) {
+		double assigned = hours.get(person);
+		if (person.getCapacityHours() <= EPSILON)
+			return assigned > EPSILON;
+		return assigned / person.getCapacityHours() * 100 > 100 + options.getShortageWarning() + EPSILON;
+	}
+
+	/** Gives the tasks of moves to their new people, see planOffload() */
+	public void applyMoves(List<Move> moves) {
+		for (Move move : moves) {
+			int index = move.row.resources.indexOf(move.from.resource);
+			if (index >= 0)
+				move.row.resources.set(index, move.to.resource);
+			move.row.suggestion = null;
+			move.row.noCandidate = false;
+		}
+		calculate();
+	}
+
 	public void clearSuggestions() {
 		for (Row row : activities) {
 			row.suggestion = null;
@@ -509,9 +642,13 @@ public class AssignmentBoard {
 
 	/** True if a person has the role of a task, and its skill when it needs one */
 	public static boolean canDo(Person person, Row row) {
-		if (!row.isActivity() || !person.getRole().equalsIgnoreCase(row.role))
+		return row.isActivity() && canDo(person.getRole(), person.getSkill(), row.role, row.skill);
+	}
+
+	private static boolean canDo(String personRole, String personSkill, String role, String skill) {
+		if (!personRole.equalsIgnoreCase(role))
 			return false;
-		return row.skill.length() == 0 || person.getSkill().length() == 0 || SkillCatalog.getInstance().canDo(person.getSkill(), row.skill);
+		return skill.length() == 0 || personSkill.length() == 0 || SkillCatalog.getInstance().canDo(personSkill, skill);
 	}
 
 	/** The tasks to assign of rows: the rows of tasks, and the tasks below the summaries, once each */
@@ -540,18 +677,48 @@ public class AssignmentBoard {
 			return issues;
 		if (row.resources.isEmpty())
 			issues.add(Messages.getString(row.noCandidate ? "AssignmentBoard.NoCandidate" : "AssignmentBoard.Unassigned")); //$NON-NLS-1$ //$NON-NLS-2$
-		else if (row.resources.size() > 1)
-			issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.Several"), names(row.resources))); //$NON-NLS-1$
-		for (Resource resource : row.resources) {
-			Person person = personOf.get(resource);
-			if (person == null)
-				continue; // a resource without role is not checked
-			if (!person.getRole().equalsIgnoreCase(row.role))
-				issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.WrongRole"), row.role, person.getName(), person.getRole())); //$NON-NLS-1$
-			else if (!canDo(person, row))
-				issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.MissingSkill"), row.skill, person.getName(), person.getSkill())); //$NON-NLS-1$
-		}
+		addIssues(row.role, row.skill, row.resources, issues);
 		return issues;
+	}
+
+	/**
+	 * For the indicator of the task sheet: what is wrong with the people of a task of an activity, see getIssues(),
+	 * without the task not assigned. Empty for the other tasks, and for the completed and cancelled ones
+	 */
+	public static List<String> taskIssues(NormalTask task) {
+		List<String> issues = new ArrayList<String>();
+		String role = ResourcePlan.role(task.getActivity());
+		if (role == null || task.isWbsParent() || task.isCancelled() || task.isComplete())
+			return issues;
+		List<Resource> resources = new ArrayList<Resource>();
+		for (Iterator i = task.getAssignments().iterator(); i.hasNext();) {
+			Assignment assignment = (Assignment) i.next();
+			if (!assignment.isDefault() && assignment.isLabor())
+				resources.add(assignment.getResource());
+		}
+		String skill = ResourcePlan.DEV.equalsIgnoreCase(role) && task.getLane() != null ? task.getLane() : ""; //$NON-NLS-1$
+		addIssues(role, skill, resources, issues);
+		return issues;
+	}
+
+	/** Several people, people of another role or without the skill of a task. A resource without role is not checked */
+	private static void addIssues(String role, String skill, List<Resource> resources, List<String> issues) {
+		if (resources.size() > 1)
+			issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.Several"), names(resources))); //$NON-NLS-1$
+		for (Resource resource : resources) {
+			if (!(resource instanceof ResourceImpl) || ((ResourceImpl) resource).getLaborRole() == null)
+				continue;
+			String personRole = ((ResourceImpl) resource).getLaborRole(), personSkill = skills((ResourceImpl) resource);
+			if (!personRole.equalsIgnoreCase(role))
+				issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.WrongRole"), role, resource.getName(), personRole)); //$NON-NLS-1$
+			else if (!canDo(personRole, personSkill, role, skill))
+				issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.MissingSkill"), skill, resource.getName(), personSkill)); //$NON-NLS-1$
+		}
+	}
+
+	/** Skills of a resource, "" for none, as in the lines of the Resource Plan */
+	private static String skills(ResourceImpl resource) {
+		return resource.getSkills() == null ? "" : resource.getSkills(); //$NON-NLS-1$
 	}
 
 	/** True if the task has no person, or a wrong one */
