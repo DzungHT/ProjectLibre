@@ -423,10 +423,12 @@ public class ProjectFactory {
 			o.setPostSaving(new Closure() {
 				public void execute(Object obj) {
 					Project p = (Project)obj;
+					long t=System.currentTimeMillis();
 					p.setAllTasksAsUnchangedFromPersisted(true);
 					p.validateNewDistributionMap();
 					portfolio.handleExternalTasks(p,false, true); 		// external link handling
 					if (opt.getPostSaving()!=null) opt.getPostSaving().execute(obj); //id, combobox update
+					System.out.println("Post saving...Done in "+(System.currentTimeMillis()-t)+" ms"); //$NON-NLS-1$ //$NON-NLS-2$
 				}
 			});
 			Job job=session.getSaveProjectJob(projects,o);

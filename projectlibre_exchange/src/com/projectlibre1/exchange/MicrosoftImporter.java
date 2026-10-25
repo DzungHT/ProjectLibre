@@ -162,8 +162,9 @@ public class MicrosoftImporter extends ServerFileImporter{
     
     @Override
 	public boolean saveProject(Project project,OutputStream out) throws Exception{
+		// only used for the XML copy kept in .pod files, which nobody reads by eye: no indenting
 		MSPDISerializer serializer = new MSPDISerializer();
-		return serializer.saveProject(project,out);
+		return serializer.saveProject(project,out,false);
 	}
 
 	@Override
