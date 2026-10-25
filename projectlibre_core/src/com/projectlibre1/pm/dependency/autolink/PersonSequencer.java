@@ -59,6 +59,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -66,7 +67,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.availability.AvailabilityWarning;
 import com.projectlibre1.pm.calendar.WorkCalendar;
 import com.projectlibre1.pm.dependency.Dependency;
@@ -77,9 +77,10 @@ import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.Task;
 
 /**
- * Order of the tasks of each person for Re-link, see docs/relink-design.md. A quick simulation of the schedule gives
- * the order only: the dates are calculated by ProjectLibre from the links. A task can start when its logic
- * predecessors are finished and its people are free and available. In the ready order, the task that can start
+ * Order of the tasks of each sequence of Auto Link, see docs/relink-design.md: of each person, or of a lane for the
+ * tasks not assigned. A quick simulation of the schedule gives the order only: the dates are calculated by
+ * ProjectLibre from the links. A task can start when its logic predecessors are finished and its people are free
+ * and available. In the ready order, the task that can start
  * first goes next, the first in the WBS on a tie; in the WBS order, each person does its tasks in the order of the
  * WBS, unless a link made by hand goes up the WBS. The order comes from a schedule that follows the logic links, so
  * its links make no circle with them.
@@ -93,10 +94,10 @@ class PersonSequencer {
 	private final Map<NormalTask, Set<NormalTask>> logic; // logic predecessors among the tasks
 	private final boolean readyOrder;
 	private final Map<NormalTask, Integer> index = new IdentityHashMap<NormalTask, Integer>();
-	private final Map<NormalTask, List<Resource>> people = new IdentityHashMap<NormalTask, List<Resource>>();
-	private final Map<Resource, List<NormalTask>> orders = new LinkedHashMap<Resource, List<NormalTask>>();
-	private final Map<Resource, Long> availableFrom = new IdentityHashMap<Resource, Long>();
-	private final Map<Resource, Long> free = new IdentityHashMap<Resource, Long>();
+	private final Map<NormalTask, List<Object>> people = new IdentityHashMap<NormalTask, List<Object>>();
+	private final Map<Object, List<NormalTask>> orders = new LinkedHashMap<Object, List<NormalTask>>();
+	private final Map<Object, Long> availableFrom = new HashMap<Object, Long>();
+	private final Map<Object, Long> free = new HashMap<Object, Long>();
 	private final Map<NormalTask, Long> finishes = new IdentityHashMap<NormalTask, Long>();
 	private final Set<Task> summaries = Collections.newSetFromMap(new IdentityHashMap<Task, Boolean>()); // above the tasks
 	private long finish = 0;
@@ -104,40 +105,34 @@ class PersonSequencer {
 	/**
 	 * @param tasks the tasks to order, in the order of the WBS
 	 * @param logic the logic predecessors of the tasks, among them: links of the activities and links made by hand
+	 * @param sequences the sequences of each task: its people (Resource), or another key for a task not assigned
+	 * (its lane), none if it is in no sequence
 	 */
-	PersonSequencer(Project project, List<NormalTask> tasks, Map<NormalTask, Set<NormalTask>> logic, boolean readyOrder) {
+	PersonSequencer(Project project, List<NormalTask> tasks, Map<NormalTask, Set<NormalTask>> logic, Map<NormalTask, List<Object>> sequences,
+			boolean readyOrder) {
 		this.project = project;
 		this.tasks = tasks;
 		this.logic = logic;
 		this.readyOrder = readyOrder;
+		people.putAll(sequences);
 		run();
-	}
-
-	/** The labor resources assigned to a task, empty if it is not assigned */
-	static List<Resource> people(NormalTask task) {
-		List<Resource> resources = new ArrayList<Resource>();
-		for (Iterator i = task.getAssignments().iterator(); i.hasNext();) {
-			Assignment assignment = (Assignment) i.next();
-			if (!assignment.isDefault() && assignment.isLabor() && !resources.contains(assignment.getResource()))
-				resources.add(assignment.getResource());
-		}
-		return resources;
 	}
 
 	private void run() {
 		long projectStart = project.getStartConstraint();
-		Map<Resource, Deque<NormalTask>> queues = new IdentityHashMap<Resource, Deque<NormalTask>>(); // tasks left, WBS order
+		Map<Object, Deque<NormalTask>> queues = new HashMap<Object, Deque<NormalTask>>(); // tasks left, WBS order
 		Map<NormalTask, List<NormalTask>> successors = new IdentityHashMap<NormalTask, List<NormalTask>>();
 		Map<NormalTask, Integer> waiting = new IdentityHashMap<NormalTask, Integer>();
 		for (NormalTask task : tasks) {
 			index.put(task, index.size());
-			List<Resource> resources = people(task);
-			people.put(task, resources);
-			for (Resource resource : resources) {
+			List<Object> resources = people.get(task);
+			if (resources == null)
+				people.put(task, resources = Collections.emptyList());
+			for (Object resource : resources) {
 				if (!orders.containsKey(resource)) {
 					orders.put(resource, new ArrayList<NormalTask>());
 					queues.put(resource, new ArrayDeque<NormalTask>());
-					long from = AvailabilityWarning.availableFrom(resource, projectStart);
+					long from = resource instanceof Resource ? AvailabilityWarning.availableFrom((Resource) resource, projectStart) : projectStart;
 					if (from == AvailabilityWarning.NEVER)
 						from = projectStart; // never available: warned by the indicator of its tasks
 					availableFrom.put(resource, Math.max(from, projectStart));
@@ -199,7 +194,7 @@ class PersonSequencer {
 					: best.getEffectiveWorkCalendar().add(bestStart, best.getDuration(), false);
 			finishes.put(best, end);
 			finish = Math.max(finish, end);
-			for (Resource resource : people.get(best)) {
+			for (Object resource : people.get(best)) {
 				free.put(resource, Math.max(free.get(resource), end));
 				orders.get(resource).add(best);
 				queues.get(resource).remove(best);
@@ -218,8 +213,8 @@ class PersonSequencer {
 	}
 
 	/** True if the task is the next one in the WBS of each of its people */
-	private boolean isNext(NormalTask task, Map<Resource, Deque<NormalTask>> queues) {
-		for (Resource resource : people.get(task))
+	private boolean isNext(NormalTask task, Map<Object, Deque<NormalTask>> queues) {
+		for (Object resource : people.get(task))
 			if (queues.get(resource).peekFirst() != task)
 				return false;
 		return true;
@@ -230,7 +225,7 @@ class PersonSequencer {
 		if (task.getActualStart() != 0)
 			return task.getStart();
 		long start = readyAt;
-		for (Resource resource : people.get(task))
+		for (Object resource : people.get(task))
 			start = Math.max(start, free.get(resource));
 		return task.getEffectiveWorkCalendar().adjustInsideCalendar(start, false);
 	}
@@ -260,26 +255,22 @@ class PersonSequencer {
 			}
 		}
 		int type = task.getConstraintType();
-		if ((type == ConstraintType.SNET || type == ConstraintType.MSO) && !task.isRelinkConstraint())
+		if ((type == ConstraintType.SNET || type == ConstraintType.MSO) && !task.isJoinConstraint())
 			start = Math.max(start, task.getConstraintDate());
 		return start;
 	}
 
-	/** The tasks of each person, in the order found */
-	Map<Resource, List<NormalTask>> getOrders() {
+	/** The tasks of each sequence, in the order found */
+	Map<Object, List<NormalTask>> getOrders() {
 		return orders;
 	}
 	/** First day of a person: the start of the project, or the start of its first period of Max Units over 0% after it */
-	long getAvailableFrom(Resource resource) {
+	long getAvailableFrom(Object resource) {
 		Long from = availableFrom.get(resource);
 		return from == null ? project.getStartConstraint() : from;
 	}
 	/** End of the last task in the simulation, 0 if there are none */
 	long getFinish() {
 		return finish;
-	}
-	List<Resource> getPeople(NormalTask task) {
-		List<Resource> resources = people.get(task);
-		return resources == null ? Collections.<Resource> emptyList() : resources;
 	}
 }

@@ -155,7 +155,6 @@ public interface MenuActionConstants {
 	public static final String ACTION_VALIDATE_LINKS         = "ValidateLinks";
 	public static final String ACTION_RESOURCE_PLAN         = "ResourcePlan";
 	public static final String ACTION_ASSIGNMENT_BOARD      = "AssignmentBoard";
-	public static final String ACTION_RELINK                = "Relink";
 	public static final String ACTION_LABOR_CATALOG          = "LaborCatalog";
 	public static final String ACTION_SKILL_CATALOG          = "SkillCatalog";
 	public static final String ACTION_LABOR_COLUMNS          = "LaborColumns";

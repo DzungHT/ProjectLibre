@@ -151,7 +151,7 @@ public class AutoLinker {
 		}
 	}
 
-	/** Re-link: the constraints of the first day of the people and the leveling delays, undone with the links */
+	/** Sequences: the constraints of the first day of the people and the leveling delays, undone with the links */
 	private void changeTasks() {
 		if (plan.getConstraints().isEmpty() && plan.getDelayed().isEmpty())
 			return;
@@ -160,18 +160,18 @@ public class AutoLinker {
 		project.getUndoController().getEditSupport().postEdit(edit);
 	}
 
-	/** State of a task changed by Re-link: its constraint, and the leveling delays of the task and its assignments */
+	/** State of a task changed by Auto Link: its constraint, and the leveling delays of the task and its assignments */
 	private static class TaskState {
 		int type;
 		long date;
-		boolean relinkConstraint;
+		boolean joinConstraint;
 		long delay;
 		long[] assignmentDelays;
 
 		TaskState(NormalTask task, List<Assignment> assignments) {
 			type = task.getConstraintType();
 			date = task.getConstraintDate();
-			relinkConstraint = task.isRelinkConstraint();
+			joinConstraint = task.isJoinConstraint();
 			delay = task.getLevelingDelay();
 			assignmentDelays = new long[assignments.size()];
 			for (int i = 0; i < assignmentDelays.length; i++)
@@ -180,7 +180,7 @@ public class AutoLinker {
 		TaskState(TaskState from) {
 			type = from.type;
 			date = from.date;
-			relinkConstraint = from.relinkConstraint;
+			joinConstraint = from.joinConstraint;
 			delay = from.delay;
 			assignmentDelays = from.assignmentDelays.clone();
 		}
@@ -201,7 +201,7 @@ public class AutoLinker {
 				long date = entry.getValue();
 				state.type = date == 0 ? ConstraintType.ASAP : ConstraintType.SNET;
 				state.date = date;
-				state.relinkConstraint = date != 0;
+				state.joinConstraint = date != 0;
 			}
 			for (NormalTask task : plan.getDelayed()) {
 				TaskState state = change(task, changes);
@@ -239,7 +239,7 @@ public class AutoLinker {
 				NormalTask task = tasks.get(t);
 				TaskState state = states.get(t);
 				task.setScheduleConstraint(state.type, state.date);
-				task.setRelinkConstraint(state.relinkConstraint);
+				task.setJoinConstraint(state.joinConstraint);
 				task.setLevelingDelay(state.delay);
 				List<Assignment> list = assignments.get(t);
 				for (int i = 0; i < list.size(); i++)

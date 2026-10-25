@@ -67,14 +67,14 @@ import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.strings.Messages;
 
 /**
- * Finish of the schedule after Re-link compared to the deadline of the Resource Plan, see docs/relink-design.md:
+ * Finish of the schedule after Auto Link compared to the deadline of the Resource Plan, see docs/relink-design.md:
  * on time, on time but in the buffer kept before the deadline, or late, in working days.
  */
-public final class RelinkSummary {
+public final class FinishSummary {
 	private static final long MILLIS_PER_MINUTE = 60L * 1000;
 	private static final long MILLIS_PER_HOUR = 60 * MILLIS_PER_MINUTE;
 
-	private RelinkSummary() {
+	private FinishSummary() {
 	}
 
 	/** A sentence for a finish (estimated or calculated), with the deadline if the Resource Plan has one */
@@ -83,15 +83,15 @@ public final class RelinkSummary {
 		String text = MessageFormat.format(Messages.getString(key), format.format(finish));
 		ResourcePlanOptions options = ResourcePlanOptions.load(project);
 		if (options.getDeadline() == 0)
-			return text + " " + Messages.getString("Relink.NoDeadline"); //$NON-NLS-1$ //$NON-NLS-2$
+			return text + " " + Messages.getString("AutoLink.NoDeadline"); //$NON-NLS-1$ //$NON-NLS-2$
 		WorkCalendar calendar = project.getEffectiveWorkCalendar();
 		long deadline = calendar.adjustInsideCalendar(options.getDeadline() + 24 * MILLIS_PER_HOUR, true); // end of the day
 		String day = format.format(options.getDeadline());
 		if (finish > deadline)
-			return text + " " + MessageFormat.format(Messages.getString("Relink.Late"), day, days(calendar, finish, deadline)); //$NON-NLS-1$ //$NON-NLS-2$
+			return text + " " + MessageFormat.format(Messages.getString("AutoLink.Late"), day, days(calendar, finish, deadline)); //$NON-NLS-1$ //$NON-NLS-2$
 		String left = days(calendar, deadline, finish);
 		boolean beforeBuffer = workingDays(calendar, deadline, finish) >= options.getBuffer() - 1e-6;
-		return text + " " + MessageFormat.format(Messages.getString(beforeBuffer ? "Relink.OnTime" : "Relink.InBuffer"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		return text + " " + MessageFormat.format(Messages.getString(beforeBuffer ? "AutoLink.OnTime" : "AutoLink.InBuffer"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				day, left, String.valueOf(options.getBuffer()));
 	}
 
