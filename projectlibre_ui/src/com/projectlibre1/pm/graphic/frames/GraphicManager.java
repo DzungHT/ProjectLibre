@@ -147,6 +147,9 @@ import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
 import com.projectlibre1.dialog.ResourcePlanDialog;
+import com.projectlibre1.dialog.AssignmentBoardDialog;
+import com.projectlibre1.pm.assignment.board.AssignmentBoard;
+import com.projectlibre1.pm.assignment.board.AssignmentBoardWriter;
 import com.projectlibre1.dialog.LaborCatalogDialog;
 import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
@@ -1065,6 +1068,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
 		actionsMap.addHandler(ACTION_VALIDATE_LINKS, new ValidateLinksAction());
 		actionsMap.addHandler(ACTION_RESOURCE_PLAN, new ResourcePlanAction());
+		actionsMap.addHandler(ACTION_ASSIGNMENT_BOARD, new AssignmentBoardAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
@@ -1938,6 +1942,31 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 						text.append(text.length() == 0 ? "" : "\n").append(warning); //$NON-NLS-1$ //$NON-NLS-2$
 					Alert.warn(text.toString(), getFrameInstance());
 				}
+			} catch (Exception e) {
+				e.printStackTrace();
+				Alert.error(e.getMessage(), getFrameInstance());
+			}
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
+		}
+	}
+	/** Who does each task of the activities, see AssignmentBoard. Writes the people chosen as assignments */
+	public class AssignmentBoardAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			AssignmentBoard board = AssignmentBoardDialog.doDialog(frame.getProject());
+			if (board == null)
+				return;
+			try {
+				AssignmentBoardWriter.apply(board, this);
+				frame.activateGanttView();
 			} catch (Exception e) {
 				e.printStackTrace();
 				Alert.error(e.getMessage(), getFrameInstance());

@@ -129,7 +129,11 @@ public class TaskDefaultOption {
 		}
 		return 1.0D;
 	}
-	private static double maximumUnitsFrom(Resource resource, long date) {
+	/**
+	 * Max units of a resource from a date: the ones of the period of the date, or of the first later period with units
+	 * if it is not available then. 0 if it is never available after the date
+	 */
+	public static double maximumUnitsFrom(Resource resource, long date) {
 		AvailabilityTable table = resource.getAvailabilityTable();
 		if (table == null)
 			return resource.getMaximumUnits();
