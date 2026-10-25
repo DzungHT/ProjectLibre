@@ -118,13 +118,15 @@ public class ResourcePlan {
 		public String getKey() { return key(role, skill); }
 		/** Leaf tasks of the WBS, not cancelled */
 		public int getTasks() { return tasks; }
-		public double getWbsDays() { return wbsHours / NormalTask.HOURS_PER_MAN_DAY; }
+		/** Work of the tasks, man-hours at point 1.0: the estimate of the ULNL */
+		public double getWbsHours() { return wbsHours; }
 		/** Effort added to the WBS (PM, QA...), man-days */
 		public double getExtraDays() { return extraDays; }
-		public double getEffortDays() { return getWbsDays() + extraDays; }
-		public double getEffortHours() { return wbsHours + extraDays * NormalTask.HOURS_PER_MAN_DAY; }
-		/** Capacity of the people of the lines, man-days at point 1.0 */
-		public double getCapacityDays() { return capacityHours / NormalTask.HOURS_PER_MAN_DAY; }
+		public double getExtraHours() { return extraDays * NormalTask.HOURS_PER_MAN_DAY; }
+		/** WBS + added, man-hours */
+		public double getEffortHours() { return wbsHours + getExtraHours(); }
+		/** Capacity of the people of the lines, man-hours at point 1.0 */
+		public double getCapacityHours() { return capacityHours; }
 		/** People of the lines, with a part of the people shared with other skills (Fullstack...) */
 		public double getPeople() { return people; }
 		/** Effort / capacity, 0 if there is neither */
@@ -216,14 +218,12 @@ public class ResourcePlan {
 		public double getFte() { return fte; }
 		/** Working days of the period inside the plan */
 		public double getDays() { return hours / hoursPerDay(); }
-		/** Capacity of all the people, man-days at point 1.0 */
-		public double getCapacityDays() { return people * perPerson / NormalTask.HOURS_PER_MAN_DAY; }
-		/** Resource allocation (RA): man-days taken by the people in the period inside the plan, people × % × days */
-		public double getAllocatedDays() { return people * allocation * getDays(); }
-		/** Resource allocation in man-months: 1 MM = 22 working days */
-		public double getManMonths() { return getAllocatedDays() / NormalTask.MAN_DAYS_PER_MAN_MONTH; }
-		/** Expected production (SLSX), man-months of ULNL effort: RA (MM) × point × utilization */
-		public double getOutputManMonths() { return people * perPerson / hoursPerDay() / NormalTask.MAN_DAYS_PER_MAN_MONTH; }
+		/** Resource allocation (RA): man-hours taken by the people in the period inside the plan, people × % × working hours */
+		public double getAllocatedHours() { return people * allocation * hours; }
+		/** Resource allocation in man-months: 1 MM = 22 MD of 8 hours */
+		public double getManMonths() { return getAllocatedHours() / NormalTask.HOURS_PER_MAN_DAY / NormalTask.MAN_DAYS_PER_MAN_MONTH; }
+		/** Expected production (SLSX), man-hours of ULNL effort the people can do: RA × point × utilization */
+		public double getOutputHours() { return people * perPerson; }
 		public double getCost() { return getManMonths() * price; }
 	}
 

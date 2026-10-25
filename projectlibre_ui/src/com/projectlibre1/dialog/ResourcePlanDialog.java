@@ -68,19 +68,21 @@ import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.text.ParseException;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.prefs.Preferences;
 
 import javax.swing.AbstractCellEditor;
+import javax.swing.BorderFactory;
 import javax.swing.DefaultCellEditor;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollPane;
@@ -110,6 +112,7 @@ import com.projectlibre1.pm.resource.labor.LaborCatalog;
 import com.projectlibre1.pm.resource.labor.SkillCatalog;
 import com.projectlibre1.pm.resource.plan.ResourcePlan;
 import com.projectlibre1.pm.resource.plan.ResourcePlanOptions;
+import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.strings.Messages;
 import com.projectlibre1.util.Alert;
@@ -124,16 +127,22 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	private static final long serialVersionUID = 1L;
 	private static final int MAX_DAYS = 999;
 	// columns of the groups
-	private static final int G_ROLE = 0, G_SKILL = 1, G_TASKS = 2, G_WBS = 3, G_EXTRA = 4, G_EFFORT = 5, G_CAPACITY = 6, G_PEOPLE = 7, G_LOAD = 8;
-	private static final String[] G_HEADERS = { "Role", "Skill", "Tasks", "WbsDays", "ExtraDays", "EffortDays", "CapacityDays", "People", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$
+	private static final int G_ROLE = 0, G_SKILL = 1, G_TASKS = 2, G_WBS = 3, G_EXTRA = 4, G_EFFORT = 5, G_OUTPUT = 6, G_BALANCE = 7, G_LOAD = 8;
+	private static final String[] G_HEADERS = { "Role", "Skill", "Tasks", "WbsDays", "ExtraDays", "EffortDays", "GroupOutput", "Balance", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$
 	// columns of the lines, then a total row
 	private static final int L_SOURCE = 0, L_ROLE = 1, L_SKILL = 2, L_LEVEL = 3, L_FROM = 4, L_TO = 5, L_ALLOCATION = 6, L_QUANTITY = 7,
-			L_HEADCOUNT = 8, L_FTE = 9, L_NLTC = 10, L_RA_DAYS = 11, L_RA_MONTHS = 12, L_OUTPUT = 13, L_COST = 14;
+			L_HEADCOUNT = 8, L_FTE = 9, L_NLTC = 10, L_RA = 11, L_OUTPUT = 12, L_COST = 13;
 	private static final String[] L_HEADERS = { "LineSource", "LineRole", "LineSkill", "LineLevel", "LineFrom", "LineTo", "LineAllocation", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
-			"LineQuantity", "LineHeadcount", "LineFte", "LineNltc", "LineRaDays", "LineRaMonths", "LineOutput", "LineCost" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$
-	private static final int[] L_WIDTHS = { 70, 60, 60, 110, 85, 85, 40, 60, 65, 45, 45, 60, 60, 80, 95 };
-	/** Columns of the lines hidden by the user, see chooseColumns() */
+			"LineQuantity", "LineHeadcount", "LineFte", "LineNltc", "LineRa", "LineOutput", "LineCost" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+	private static final int[] L_WIDTHS = { 70, 60, 60, 110, 85, 85, 40, 60, 65, 45, 45, 70, 100, 95 };
+	/** Columns hidden by the user, see ColumnSet */
 	private static final String HIDDEN_COLUMNS = "resourcePlan.hiddenColumns", DEFAULT_HIDDEN_COLUMNS = "LineCost"; //$NON-NLS-1$ //$NON-NLS-2$
+	private static final String HIDDEN_GROUP_COLUMNS = "resourcePlan.hiddenGroupColumns", DEFAULT_HIDDEN_GROUP_COLUMNS = "Tasks"; //$NON-NLS-1$ //$NON-NLS-2$
+	/** Units of the effort columns: the estimate of the ULNL is in man-hours, shown in MH, MD or MM */
+	private static final String[] UNITS = { "MH", "MD", "MM" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	private static final double[] UNIT_HOURS = { 1, NormalTask.HOURS_PER_MAN_DAY, NormalTask.HOURS_PER_MAN_DAY * NormalTask.MAN_DAYS_PER_MAN_MONTH };
+	private static final String UNIT = "resourcePlan.unit"; //$NON-NLS-1$
+	private static final int DEFAULT_UNIT = 1;
 
 	private static final long DAY = 24L * 60 * 60 * 1000;
 	private final ResourcePlanOptions options;
@@ -141,12 +150,15 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	private final DateFormat dateFormat = EditOption.getInstance().getShortDateFormat();
 	private final NumberFormat decimal = NumberFormat.getNumberInstance();
 	private final NumberFormat money = NumberFormat.getIntegerInstance();
+	private final NumberFormat unitFormat = NumberFormat.getNumberInstance();
+	private int unit = DEFAULT_UNIT; // index in UNITS
+	private final List<JComboBox> unitChoices = new ArrayList<JComboBox>(); // one above each table, see unitChooser()
 
 	DateField start, deadline;
 	JSpinner buffer, utilization, devLag, testerLag, testTail, baTail, maxPeople;
 	JTable groupTable, lineTable;
 	AbstractTableModel groupModel, lineModel;
-	TableColumn[] lineColumns; // all the columns of the lines, shown or not
+	ColumnSet groupColumns, lineColumns; // the columns that can be hidden
 	JLabel verdict;
 	private boolean updating = false;
 
@@ -290,12 +302,6 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				update();
 			}
 		});
-		JButton addRole = new JButton(Messages.getString("ResourcePlan.AddRole")); //$NON-NLS-1$
-		addRole.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				addRole();
-			}
-		});
 		JButton addLine = new JButton(Messages.getString("ResourcePlan.AddLine")); //$NON-NLS-1$
 		addLine.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
@@ -313,13 +319,6 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		removeLine.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				removeLines();
-			}
-		});
-		final JButton columns = new JButton(Messages.getString("ResourcePlan.Columns")); //$NON-NLS-1$
-		columns.setToolTipText(Messages.getString("ResourcePlan.ColumnsTooltip")); //$NON-NLS-1$
-		columns.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				chooseColumns(columns);
 			}
 		});
 
@@ -355,12 +354,17 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		builder.appendSeparator(Messages.getString("ResourcePlan.Parameters")); //$NON-NLS-1$
 		builder.append(parameters.getPanel());
 		builder.append(help("ResourcePlan.ParametersHelp")); //$NON-NLS-1$
+		loadUnit();
 		builder.appendSeparator(Messages.getString("ResourcePlan.Effort")); //$NON-NLS-1$
+		JPanel groupHeader = new JPanel(new BorderLayout());
+		groupHeader.add(unitChooser(), BorderLayout.WEST);
+		groupHeader.add(groupColumns.button(), BorderLayout.EAST);
+		builder.append(groupHeader);
 		builder.append(groupScroll);
-		builder.append(buttons(addRole));
 		builder.appendSeparator(Messages.getString("ResourcePlan.Lines")); //$NON-NLS-1$
 		JPanel lineHeader = new JPanel(new BorderLayout());
-		lineHeader.add(columns, BorderLayout.EAST);
+		lineHeader.add(unitChooser(), BorderLayout.WEST);
+		lineHeader.add(lineColumns.button(), BorderLayout.EAST);
 		builder.append(lineHeader);
 		builder.append(lineScroll);
 		builder.append(buttons(addLine, removeLine, defaultDates));
@@ -385,50 +389,110 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		groupModel = new AbstractTableModel() {
 			private static final long serialVersionUID = 1L;
 			public int getRowCount() {
-				return plan.getGroups().size();
+				return plan.getGroups().size() + 1; // the total
 			}
 			public int getColumnCount() {
 				return G_HEADERS.length;
 			}
 			public String getColumnName(int column) {
-				return Messages.getString("ResourcePlan." + G_HEADERS[column]); //$NON-NLS-1$
+				return columnName(G_HEADERS[column]);
 			}
 			public Object getValueAt(int row, int column) {
+				if (isTotalGroup(row))
+					return groupTotal(column);
 				ResourcePlan.Group group = plan.getGroups().get(row);
 				switch (column) {
 				case G_ROLE: return group.getRole();
 				case G_SKILL: return group.getSkill();
 				case G_TASKS: return group.getTasks() == 0 ? "" : String.valueOf(group.getTasks()); //$NON-NLS-1$
-				case G_WBS: return days(group.getWbsDays());
-				case G_EXTRA: return group.getExtraDays() == 0 ? "" : decimal.format(group.getExtraDays()); //$NON-NLS-1$
-				case G_EFFORT: return days(group.getEffortDays());
-				case G_CAPACITY: return days(group.getCapacityDays());
-				case G_PEOPLE: return group.getPeople() == 0 ? "" : decimal.format(group.getPeople()); //$NON-NLS-1$
+				case G_WBS: return amount(group.getWbsHours());
+				case G_EXTRA: return amount(group.getExtraHours());
+				case G_EFFORT: return amount(group.getEffortHours());
+				case G_OUTPUT: return amount(group.getCapacityHours());
+				case G_BALANCE: return balance(group.getCapacityHours() - group.getEffortHours());
 				case G_LOAD: return percent(group.getLoad());
 				default: return null;
 				}
 			}
 			public boolean isCellEditable(int row, int column) {
-				return column == G_EXTRA;
+				return column == G_EXTRA && !isTotalGroup(row);
 			}
 			public void setValueAt(Object value, int row, int column) {
-				double days = parseNumber(value);
-				if (days < 0)
+				if (isTotalGroup(row))
 					return;
-				plan.setExtraDays(plan.getGroups().get(row), days);
+				double amount = parseNumber(value); // in the unit shown
+				if (amount < 0)
+					return;
+				plan.setExtraDays(plan.getGroups().get(row), amount * UNIT_HOURS[unit] / NormalTask.HOURS_PER_MAN_DAY);
 				updateLater();
 			}
 		};
-		groupTable = new PlanTable(groupModel, G_HEADERS);
+		groupTable = new PlanTable(groupModel, G_HEADERS) {
+			private static final long serialVersionUID = 1L;
+			protected boolean isTotalRow(int row) {
+				return isTotalGroup(row);
+			}
+		};
 		NumberRenderer renderer = new NumberRenderer();
 		for (int column = G_TASKS; column < G_HEADERS.length; column++)
 			groupTable.getColumnModel().getColumn(column).setCellRenderer(renderer);
+		groupTable.getColumnModel().getColumn(G_BALANCE).setCellRenderer(new NumberRenderer() {
+			private static final long serialVersionUID = 1L;
+			protected boolean isAlert(int row) {
+				return groupBalance(row) < -1e-6;
+			}
+		});
 		groupTable.getColumnModel().getColumn(G_LOAD).setCellRenderer(new NumberRenderer() {
 			private static final long serialVersionUID = 1L;
 			protected boolean isAlert(int row) {
-				return plan.getGroups().get(row).getLoad() > 1 + 1e-6;
+				return groupBalance(row) < -1e-6;
 			}
 		});
+		groupColumns = new ColumnSet(groupTable, G_HEADERS, HIDDEN_GROUP_COLUMNS, DEFAULT_HIDDEN_GROUP_COLUMNS);
+	}
+
+	/** The row after the groups, with the totals */
+	private boolean isTotalGroup(int row) {
+		return row >= plan.getGroups().size();
+	}
+
+	/** Expected output less effort of a group, or of all for the total, man-hours. Negative: people are missing */
+	private double groupBalance(int row) {
+		if (!isTotalGroup(row))
+			return plan.getGroups().get(row).getCapacityHours() - plan.getGroups().get(row).getEffortHours();
+		double balance = 0;
+		for (ResourcePlan.Group group : plan.getGroups())
+			balance += group.getCapacityHours() - group.getEffortHours();
+		return balance;
+	}
+
+	private Object groupTotal(int column) {
+		int tasks = 0;
+		double wbs = 0, extra = 0, effort = 0, output = 0;
+		for (ResourcePlan.Group group : plan.getGroups()) {
+			tasks += group.getTasks();
+			wbs += group.getWbsHours();
+			extra += group.getExtraHours();
+			effort += group.getEffortHours();
+			output += group.getCapacityHours();
+		}
+		switch (column) {
+		case G_ROLE: return Messages.getString("ResourcePlan.Total"); //$NON-NLS-1$
+		case G_TASKS: return String.valueOf(tasks);
+		case G_WBS: return amount(wbs);
+		case G_EXTRA: return amount(extra);
+		case G_EFFORT: return amount(effort);
+		case G_OUTPUT: return amount(output);
+		case G_BALANCE: return balance(output - effort);
+		case G_LOAD: return percent(output <= 1e-9 ? (effort > 1e-9 ? Double.POSITIVE_INFINITY : 0) : effort / output);
+		default: return ""; //$NON-NLS-1$
+		}
+	}
+
+	/** Man-hours in the unit shown, with a + when there are more than needed */
+	private String balance(double hours) {
+		String text = amount(hours);
+		return hours > 1e-9 && text.length() > 0 ? "+" + text : text; //$NON-NLS-1$
 	}
 
 	private void createLineTable() {
@@ -441,7 +505,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				return L_HEADERS.length;
 			}
 			public String getColumnName(int column) {
-				return Messages.getString("ResourcePlan." + L_HEADERS[column]); //$NON-NLS-1$
+				return columnName(L_HEADERS[column]);
 			}
 			public Object getValueAt(int row, int column) {
 				if (isTotalLine(row))
@@ -459,9 +523,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				case L_HEADCOUNT: return String.valueOf(line.getPeople());
 				case L_FTE: return line.isAuto() ? decimal.format(line.getFte()) : ""; //$NON-NLS-1$
 				case L_NLTC: return String.valueOf(line.getPoint());
-				case L_RA_DAYS: return decimal.format(line.getAllocatedDays());
-				case L_RA_MONTHS: return decimal.format(line.getManMonths());
-				case L_OUTPUT: return decimal.format(line.getOutputManMonths());
+				case L_RA: return amount(line.getAllocatedHours());
+				case L_OUTPUT: return amount(line.getOutputHours());
 				case L_COST: return line.getCost() == 0 ? "" : money.format(line.getCost()); //$NON-NLS-1$
 				default: return null;
 				}
@@ -471,9 +534,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				for (ResourcePlan.Line line : plan.getLines()) {
 					switch (column) {
 					case L_HEADCOUNT: total += line.getPeople(); break;
-					case L_RA_DAYS: total += line.getAllocatedDays(); break;
-					case L_RA_MONTHS: total += line.getManMonths(); break;
-					case L_OUTPUT: total += line.getOutputManMonths(); break;
+					case L_RA: total += line.getAllocatedHours(); break;
+					case L_OUTPUT: total += line.getOutputHours(); break;
 					case L_COST: total += line.getCost(); break;
 					default: break;
 					}
@@ -481,9 +543,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				switch (column) {
 				case L_SOURCE: return Messages.getString("ResourcePlan.Total"); //$NON-NLS-1$
 				case L_HEADCOUNT: return String.valueOf(Math.round(total));
-				case L_RA_DAYS:
-				case L_RA_MONTHS:
-				case L_OUTPUT: return decimal.format(total);
+				case L_RA:
+				case L_OUTPUT: return amount(total);
 				case L_COST: return money.format(total);
 				default: return ""; //$NON-NLS-1$
 				}
@@ -579,12 +640,9 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		NumberRenderer renderer = new NumberRenderer();
 		for (int column = L_ALLOCATION; column < L_HEADERS.length; column++)
 			lineTable.getColumnModel().getColumn(column).setCellRenderer(renderer);
-		lineColumns = new TableColumn[L_HEADERS.length];
-		for (int column = 0; column < L_HEADERS.length; column++) {
-			lineColumns[column] = lineTable.getColumnModel().getColumn(column);
-			lineColumns[column].setPreferredWidth(L_WIDTHS[column]);
-		}
-		showColumns(hiddenColumns());
+		for (int column = 0; column < L_HEADERS.length; column++)
+			lineTable.getColumnModel().getColumn(column).setPreferredWidth(L_WIDTHS[column]);
+		lineColumns = new ColumnSet(lineTable, L_HEADERS, HIDDEN_COLUMNS, DEFAULT_HIDDEN_COLUMNS);
 	}
 
 	/** The row after the lines, with the totals */
@@ -607,72 +665,97 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		return lines;
 	}
 
-	/** Header keys of the columns of the lines hidden by the user */
-	private static Set<String> hiddenColumns() {
-		Set<String> hidden = new LinkedHashSet<String>();
-		String value = DEFAULT_HIDDEN_COLUMNS;
-		try {
-			value = Preferences.userNodeForPackage(ResourcePlanDialog.class).get(HIDDEN_COLUMNS, DEFAULT_HIDDEN_COLUMNS);
-		} catch (Exception e) { // preferences not available
+	/**
+	 * The columns of a table that can be shown or hidden with the button of columns, see choose(). The hidden ones are
+	 * remembered for the next times by their header keys
+	 */
+	private class ColumnSet {
+		private final JTable table;
+		private final String[] headers;
+		private final TableColumn[] columns; // all the columns, shown or not
+		private final String preference, defaultHidden;
+
+		ColumnSet(JTable table, String[] headers, String preference, String defaultHidden) {
+			this.table = table;
+			this.headers = headers;
+			this.preference = preference;
+			this.defaultHidden = defaultHidden;
+			columns = new TableColumn[headers.length];
+			for (int column = 0; column < headers.length; column++)
+				columns[column] = table.getColumnModel().getColumn(column);
+			show(hidden());
 		}
-		for (String key : value.split(",")) //$NON-NLS-1$
-			if (key.trim().length() > 0)
-				hidden.add(key.trim());
-		return hidden;
-	}
 
-	/** Shows the columns of the lines that are not hidden, in their order */
-	private void showColumns(Set<String> hidden) {
-		stopEditing();
-		TableColumnModel model = lineTable.getColumnModel();
-		while (model.getColumnCount() > 0)
-			model.removeColumn(model.getColumn(0));
-		for (int column = 0; column < L_HEADERS.length; column++)
-			if (!hidden.contains(L_HEADERS[column]))
-				model.addColumn(lineColumns[column]);
-	}
+		/** A column, shown or not */
+		TableColumn get(int column) {
+			return columns[column];
+		}
 
-	/** A menu of the columns of the lines to check the ones to show. Remembered for the next times */
-	private void chooseColumns(Component button) {
-		final Set<String> hidden = hiddenColumns();
-		JPopupMenu menu = new JPopupMenu();
-		for (int column = 0; column < L_HEADERS.length; column++) {
-			final String key = L_HEADERS[column];
-			final JCheckBoxMenuItem item = new JCheckBoxMenuItem(Messages.getString("ResourcePlan." + key), !hidden.contains(key)); //$NON-NLS-1$
-			item.setToolTipText("<html><div style='width:300px'>" + Messages.getString("ResourcePlan." + key + "Tooltip") + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
-			item.addActionListener(new ActionListener() {
+		/** Header keys of the hidden columns */
+		private Set<String> hidden() {
+			Set<String> hidden = new LinkedHashSet<String>();
+			String value = defaultHidden;
+			try {
+				value = Preferences.userNodeForPackage(ResourcePlanDialog.class).get(preference, defaultHidden);
+			} catch (Exception e) { // preferences not available
+			}
+			for (String key : value.split(",")) //$NON-NLS-1$
+				if (key.trim().length() > 0)
+					hidden.add(key.trim());
+			return hidden;
+		}
+
+		/** Shows the columns that are not hidden, in their order */
+		private void show(Set<String> hidden) {
+			stopEditing();
+			TableColumnModel model = table.getColumnModel();
+			while (model.getColumnCount() > 0)
+				model.removeColumn(model.getColumn(0));
+			for (int column = 0; column < headers.length; column++)
+				if (!hidden.contains(headers[column]))
+					model.addColumn(columns[column]);
+		}
+
+		/** The button showing the menu of the columns */
+		JButton button() {
+			final JButton button = new JButton(Messages.getString("ResourcePlan.Columns")); //$NON-NLS-1$
+			button.setToolTipText(Messages.getString("ResourcePlan.ColumnsTooltip")); //$NON-NLS-1$
+			button.addActionListener(new ActionListener() {
 				public void actionPerformed(ActionEvent e) {
-					if (item.isSelected())
-						hidden.remove(key);
-					else
-						hidden.add(key);
-					StringBuilder value = new StringBuilder();
-					for (String h : hidden)
-						value.append(value.length() == 0 ? "" : ",").append(h); //$NON-NLS-1$ //$NON-NLS-2$
-					try {
-						Preferences.userNodeForPackage(ResourcePlanDialog.class).put(HIDDEN_COLUMNS, value.toString());
-					} catch (Exception ex) { // preferences not available: shown until the dialog is closed
-					}
-					showColumns(hidden);
+					choose(button);
 				}
 			});
-			menu.add(item);
+			return button;
 		}
-		menu.show(button, 0, button.getHeight());
-	}
 
-	/** Adds a group to type the effort of a role which has no task in the WBS: PM, QA... */
-	private void addRole() {
-		Object role = JOptionPane.showInputDialog(this, Messages.getString("ResourcePlan.AddRolePrompt"), //$NON-NLS-1$
-				Messages.getString("ResourcePlan.Title"), JOptionPane.QUESTION_MESSAGE, null, //$NON-NLS-1$
-				LaborCatalog.getInstance().getRoles().toArray(), null);
-		if (role == null)
-			return;
-		ResourcePlan.Group group = plan.group(role.toString(), ""); //$NON-NLS-1$
-		update();
-		int row = plan.getGroups().indexOf(group);
-		groupTable.changeSelection(row, G_EXTRA, false, false);
-		groupTable.editCellAt(row, G_EXTRA);
+		/** A menu of the columns to check the ones to show */
+		private void choose(Component button) {
+			final Set<String> hidden = hidden();
+			JPopupMenu menu = new JPopupMenu();
+			for (int column = 0; column < headers.length; column++) {
+				final String key = headers[column];
+				final JCheckBoxMenuItem item = new JCheckBoxMenuItem(columnName(key), !hidden.contains(key));
+				item.setToolTipText("<html><div style='width:300px'>" + Messages.getString("ResourcePlan." + key + "Tooltip") + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+				item.addActionListener(new ActionListener() {
+					public void actionPerformed(ActionEvent e) {
+						if (item.isSelected())
+							hidden.remove(key);
+						else
+							hidden.add(key);
+						StringBuilder value = new StringBuilder();
+						for (String h : hidden)
+							value.append(value.length() == 0 ? "" : ",").append(h); //$NON-NLS-1$ //$NON-NLS-2$
+						try {
+							Preferences.userNodeForPackage(ResourcePlanDialog.class).put(preference, value.toString());
+						} catch (Exception ex) { // preferences not available: shown until the dialog is closed
+						}
+						show(hidden);
+					}
+				});
+				menu.add(item);
+			}
+			menu.show(button, 0, button.getHeight());
+		}
 	}
 
 	/** Adds an auto line for the selected group, or a copy of the selected line */
@@ -682,6 +765,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		int[] selectedLines = selectedLines();
 		int selectedLine = selectedLines.length == 0 ? -1 : selectedLines[0];
 		int selectedGroup = groupTable.getSelectedRow();
+		if (selectedGroup >= plan.getGroups().size())
+			selectedGroup = -1; // the total
 		if (selectedLine >= 0) {
 			ResourcePlan.Line copy = plan.getLines().get(selectedLine);
 			line = new ResourcePlan.Line(copy.getRole(), copy.getLevel(), false);
@@ -760,11 +845,13 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				dateFormat.format(new Date(plan.getStart())), dateFormat.format(new Date(plan.getEnd() - 1)))).append("<br>"); //$NON-NLS-1$
 		text.append(MessageFormat.format(Messages.getString("ResourcePlan.EarliestEnd"), //$NON-NLS-1$
 				dateFormat.format(new Date(plan.getEarliestEnd() - 1)))).append("<br>"); //$NON-NLS-1$
-		double output = 0;
-		for (ResourcePlan.Line line : plan.getLines())
-			output += line.getOutputManMonths();
+		double allocated = 0, output = 0;
+		for (ResourcePlan.Line line : plan.getLines()) {
+			allocated += line.getAllocatedHours();
+			output += line.getOutputHours();
+		}
 		text.append(MessageFormat.format(Messages.getString("ResourcePlan.Totals"), String.valueOf(plan.getTotalPeople()), //$NON-NLS-1$
-				String.valueOf(plan.getNewPeople()), decimal.format(plan.getTotalManMonths()), decimal.format(output)));
+				String.valueOf(plan.getNewPeople()), amount(allocated), amount(output), UNITS[unit]));
 		for (String error : plan.getErrors())
 			text.append("<br><font color='red'>&#8226; ").append(error).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$
 		for (String warning : plan.getWarnings())
@@ -772,8 +859,71 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		verdict.setText(text.append("</div></html>").toString()); //$NON-NLS-1$
 	}
 
-	private String days(double days) {
-		return days == 0 ? "" : decimal.format(days); //$NON-NLS-1$
+	/** Man-hours in the unit shown, empty for 0 */
+	private String amount(double hours) {
+		return Math.abs(hours) < 1e-9 ? "" : unitFormat.format(hours / UNIT_HOURS[unit]); //$NON-NLS-1$
+	}
+
+	/** Name of a column, with the unit shown for the effort columns */
+	private String columnName(String key) {
+		return MessageFormat.format(Messages.getString("ResourcePlan." + key), UNITS[unit]); //$NON-NLS-1$
+	}
+
+	/** The unit last used */
+	private void loadUnit() {
+		try {
+			unit = Math.max(0, Math.min(UNITS.length - 1, Preferences.userNodeForPackage(ResourcePlanDialog.class).getInt(UNIT, DEFAULT_UNIT)));
+		} catch (Exception e) { // preferences not available
+		}
+		setUnit(unit);
+	}
+
+	/**
+	 * A choice of the unit of the effort columns, above a table. All the choices show the same unit: choosing it in one
+	 * changes both tables and the other choices. Remembered for the next times
+	 */
+	private JComponent unitChooser() {
+		final JComboBox units = new JComboBox(UNITS);
+		units.setSelectedIndex(unit);
+		units.setToolTipText(Messages.getString("ResourcePlan.UnitTooltip")); //$NON-NLS-1$
+		units.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				if (units.getSelectedIndex() == unit)
+					return; // the same unit, or set by another choice
+				setUnit(units.getSelectedIndex());
+				for (JComboBox other : unitChoices)
+					other.setSelectedIndex(unit);
+				try {
+					Preferences.userNodeForPackage(ResourcePlanDialog.class).putInt(UNIT, unit);
+				} catch (Exception ex) { // preferences not available: kept until the dialog is closed
+				}
+			}
+		});
+		unitChoices.add(units);
+		JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		JLabel label = new JLabel(Messages.getString("ResourcePlan.Unit")); //$NON-NLS-1$
+		label.setToolTipText(units.getToolTipText());
+		label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 5));
+		panel.add(label);
+		panel.add(units);
+		return panel;
+	}
+
+	/** Shows the effort columns in a unit: their names and values */
+	private void setUnit(int unit) {
+		stopEditing();
+		this.unit = unit;
+		unitFormat.setMinimumFractionDigits(0);
+		unitFormat.setMaximumFractionDigits(unit == 2 ? 2 : 1); // the man-months are small numbers
+		for (int column = 0; column < G_HEADERS.length; column++)
+			groupColumns.get(column).setHeaderValue(columnName(G_HEADERS[column]));
+		for (int column = 0; column < L_HEADERS.length; column++)
+			lineColumns.get(column).setHeaderValue(columnName(L_HEADERS[column]));
+		groupTable.getTableHeader().repaint();
+		lineTable.getTableHeader().repaint();
+		groupModel.fireTableDataChanged();
+		lineModel.fireTableDataChanged();
+		showVerdict();
 	}
 
 	private static String percent(double load) {
