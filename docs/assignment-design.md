@@ -81,25 +81,32 @@ Ribbon HTD Planner, nhóm **Planning**, cạnh nút Resource Plan.
   cảnh báo.
 - Dòng chức năng và module hiện tóm tắt: số task chưa giao, các người đang làm.
 - Lọc: role, kỹ năng, module, chỉ task chưa giao, chỉ task có cảnh báo.
-- Chọn nhiều dòng; chọn một dòng WBS cha (ở bất kỳ cấp nào) là chọn tất cả task con.
+- Chọn nhiều dòng; chọn một dòng WBS cha (ở bất kỳ cấp nào) là chọn tất cả task con. Riêng khi giao cho một người, chỉ
+  các task con hợp với người đó được giao (mục 4.3).
 
 ### 4.2 Bên phải: người
 
 - Mỗi resource labor có role một dòng: tên, role, level, kỹ năng, khoảng [Từ, Đến], thanh tải, số task, số MD đã giao.
-- Lọc theo role; khi bên trái đang chọn task, người không đúng role hoặc không đủ kỹ năng bị làm mờ (vẫn chọn được).
+- Lọc theo role; khi bên trái đang chọn task, người không đúng role hoặc không đủ kỹ năng bị làm mờ (vẫn chọn được). Với
+  dòng tổng hợp đang chọn, người chỉ bị làm mờ khi không làm được task nào bên dưới.
 - Chọn một người thì bên trái tô các task của người đó.
 
 ### 4.3 Thao tác
 
 | Thao tác | Kết quả |
 |---|---|
-| **Giao cho người đã chọn** (hoặc nhấp đúp vào người) | Các task đang chọn giao cho người đó, thay người cũ |
+| **Giao cho người đã chọn** (hoặc nhấp đúp vào người) | Các task đang chọn giao cho người đó, thay người cũ. Task chọn trực tiếp mà sai role/kỹ năng thì hỏi trước khi giao. Dưới một dòng tổng hợp đang chọn thì **chỉ giao các task đúng role và kỹ năng của người đó** (`canDo()`, theo bộ lọc), các task khác giữ người cũ; dòng trạng thái ghi số task được giữ. Không có task nào hợp thì báo, không đổi gì |
 | **Giao cụm...** | Với các dòng WBS đang chọn (module, nhóm con, chức năng): chọn 1 người cho mỗi role có task (BA, DEV theo từng kỹ năng, TESTER). Mỗi task về người cùng role/kỹ năng. Role bỏ trống thì không đổi |
 | **Bỏ giao** | Xoá người được giao của các task đang chọn |
 | **Gợi ý** | Điền cột *Đề xuất* cho task chưa giao và chưa khoá (mục 5) |
 | **Chấp nhận đề xuất** | Đề xuất của các task đang chọn (hoặc tất cả nếu không chọn) thành người được giao |
 | **Khoá / Mở khoá** | Task khoá không bị Gợi ý, Giao, Giao cụm, Bỏ giao, Thay người đụng tới; dòng trạng thái ghi số task khoá được giữ. Muốn đổi người thì mở khoá trước. Bấm vào ô khoá (cột đầu) để khoá/mở một task, hoặc các task dưới một dòng tổng hợp (theo bộ lọc) |
-| Kéo task thả vào người | Như *Giao cho người đã chọn* |
+| Kéo task thả vào người | Như *Giao cho người đã chọn* (kéo một dòng tổng hợp thì chỉ các task hợp với người được thả vào) |
+
+Ví dụ: chọn module *Quản lý hợp đồng* rồi giao cho *DEV M Nguyễn A* (BE) thì chỉ các task PT cần BE (hoặc không cần kỹ năng)
+về Nguyễn A; GP, KT và PT FE giữ nguyên. Muốn giao mỗi role một người cho cả module thì dùng *Giao cụm...*. Một task được
+coi là "dưới dòng tổng hợp đang chọn" khi có một dòng cha (ở bất kỳ cấp nào) đang được chọn, kể cả khi chính task đó cũng
+được chọn (ví dụ chọn bằng Shift từ module xuống).
 
 Mọi thao tác chỉ sửa trong hộp thoại, thanh tải tính lại ngay. **Apply** mới ghi vào dự án (mục 7).
 

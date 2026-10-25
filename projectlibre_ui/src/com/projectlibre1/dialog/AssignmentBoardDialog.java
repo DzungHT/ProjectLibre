@@ -173,6 +173,8 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 	private JLabel status;
 	/** The tasks selected, kept when the rows are shown again; the tasks they give with the filter */
 	private List<AssignmentBoard.Row> selectedRows = new ArrayList<AssignmentBoard.Row>();
+	/** The rows selected, to know if a task is below a summary selected */
+	private Set<AssignmentBoard.Row> selectedSet = Collections.newSetFromMap(new IdentityHashMap<AssignmentBoard.Row, Boolean>());
 	private List<AssignmentBoard.Row> selectedTasks = new ArrayList<AssignmentBoard.Row>();
 	private boolean updating = false;
 
@@ -475,6 +477,8 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		selectedRows = new ArrayList<AssignmentBoard.Row>();
 		for (int index : taskTable.getSelectedRows())
 			selectedRows.add(rows.get(index));
+		selectedSet = Collections.newSetFromMap(new IdentityHashMap<AssignmentBoard.Row, Boolean>());
+		selectedSet.addAll(selectedRows);
 		selectedTasks = filtered(selectedRows);
 		personModel.fireTableRowsUpdated(0, Math.max(0, persons.size() - 1)); // the people who cannot do them are dimmed
 		showStatus();
@@ -535,16 +539,45 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		assignTo(person);
 	}
 
-	/** Gives the tasks selected to a person, after asking if some are not of its role or skill */
+	/** Gives the tasks selected to a person, after asking if some are not of its role or skill. Below a summary selected,
+	 * only the tasks the person can do go to it, the others keep their people */
 	private void assignTo(AssignmentBoard.Person person) {
+		List<AssignmentBoard.Row> tasks = tasksFor(person);
+		if (tasks.isEmpty()) {
+			JOptionPane.showMessageDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.NoTaskFits"), person.getName()), //$NON-NLS-1$
+					getTitle(), JOptionPane.INFORMATION_MESSAGE);
+			return;
+		}
 		int wrong = 0;
-		for (AssignmentBoard.Row row : selectedTasks)
+		for (AssignmentBoard.Row row : tasks)
 			if (!AssignmentBoard.canDo(person, row))
 				wrong++;
 		if (wrong > 0 && JOptionPane.showConfirmDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.ConfirmMismatch"), //$NON-NLS-1$
 				String.valueOf(wrong), person.getName()), getTitle(), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
 			return;
-		changed(board.assign(selectedTasks, person.getResource()));
+		int skipped = selectedTasks.size() - tasks.size();
+		changed(board.assign(tasks, person.getResource()));
+		if (skipped > 0) {
+			note += MessageFormat.format(Messages.getString("AssignmentBoard.OthersKept"), String.valueOf(skipped), person.getName()); //$NON-NLS-1$
+			showStatus();
+		}
+	}
+
+	/** The tasks selected that go to a person: the tasks selected themselves, and below a summary selected only the
+	 * tasks the person can do (its role, and its skill when the task needs one) */
+	private List<AssignmentBoard.Row> tasksFor(AssignmentBoard.Person person) {
+		List<AssignmentBoard.Row> result = new ArrayList<AssignmentBoard.Row>();
+		for (AssignmentBoard.Row row : selectedTasks)
+			if (!belowSelectedSummary(row) || AssignmentBoard.canDo(person, row))
+				result.add(row);
+		return result;
+	}
+
+	private boolean belowSelectedSummary(AssignmentBoard.Row row) {
+		for (AssignmentBoard.Row parent = row.getParent(); parent != null; parent = parent.getParent())
+			if (selectedSet.contains(parent))
+				return true;
+		return false;
 	}
 
 	private void unassign() {
@@ -1026,9 +1059,12 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 		});
 	}
 
-	/** True if a person can do all the tasks selected (or if none is selected) */
+	/** True if a person can do all the tasks selected that would go to it, and at least one (or if none is selected) */
 	private boolean canDoSelected(AssignmentBoard.Person person) {
-		for (AssignmentBoard.Row row : selectedTasks)
+		List<AssignmentBoard.Row> tasks = tasksFor(person);
+		if (tasks.isEmpty())
+			return selectedTasks.isEmpty();
+		for (AssignmentBoard.Row row : tasks)
 			if (!AssignmentBoard.canDo(person, row))
 				return false;
 		return true;
