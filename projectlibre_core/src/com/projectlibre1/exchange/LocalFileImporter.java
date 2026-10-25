@@ -346,9 +346,12 @@ public class LocalFileImporter extends FileImporter {
 		
 
 		boolean error=false;
-		
+		long t0=System.currentTimeMillis();
+
 		try {
 			FileOutputStream fout=new FileOutputStream(tmpFile);
+			// ObjectOutputStream writes by small pieces: buffer both parts of the file
+			BufferedOutputStream bout=new BufferedOutputStream(fout,65536);
 			try {
 				exportProgress(0.05f, Messages.getString("SaveProgress.Preparing")); //$NON-NLS-1$
 				DataUtil serializer=new DataUtil();
@@ -362,7 +365,7 @@ public class LocalFileImporter extends FileImporter {
 				exportProgress(0.3f, Messages.getString("SaveProgress.Writing")); //$NON-NLS-1$
 				System.out.println("Saving "+file+"..."); //$NON-NLS-1$ //$NON-NLS-2$
 				t1=System.currentTimeMillis();
-				ObjectOutputStream out=new ObjectOutputStream(fout);
+				ObjectOutputStream out=new ObjectOutputStream(bout);
 				out.writeObject(VERSION);
 				out.writeObject(projectData);
 				out.flush();
@@ -374,14 +377,14 @@ public class LocalFileImporter extends FileImporter {
 				e.printStackTrace();
 			}
 			try{
-				BufferedOutputStream bout=new BufferedOutputStream(fout);
 				exportProgress(0.5f, Messages.getString("SaveProgress.WritingXml")); //$NON-NLS-1$
+				long t1=System.currentTimeMillis();
 				bout.write(PROJECT_LIBRE_FILE_SEPARATOR.getBytes());
-				bout.flush();
 				FileImporter importer=LocalSession.getImporter("com.projectlibre1.exchange.MicrosoftImporter");
 				importer.saveProject(project, bout);
 				bout.flush();
-				
+				System.out.println("XML copy...Done in "+(System.currentTimeMillis()-t1)+" ms"); //$NON-NLS-1$ //$NON-NLS-2$
+
 			}catch (Exception e) {
 				error=true;
 				e.printStackTrace();
@@ -401,6 +404,7 @@ public class LocalFileImporter extends FileImporter {
 			file.delete();
 			tmpFile.renameTo(file);
 		}
+		System.out.println("Saving "+file+"...Done in "+(System.currentTimeMillis()-t0)+" ms in all"); //$NON-NLS-1$ //$NON-NLS-2$
 
 	}
 

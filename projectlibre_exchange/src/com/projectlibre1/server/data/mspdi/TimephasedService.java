@@ -56,6 +56,7 @@
 package com.projectlibre1.server.data.mspdi;
 
 import java.util.Calendar;
+import java.util.GregorianCalendar;
 
 import com.projectlibre1.algorithm.Query;
 import com.projectlibre1.algorithm.RangeIntervalGenerator;
@@ -94,12 +95,34 @@ public class TimephasedService {
 			end = assignment.getStop();
 		else if (fieldType == HasTimeDistributedData.REMAINING_WORK)
 			start = assignment.getStop();
+		if (start < assignment.getStart()) // the stop of an assignment not started is 0: don't walk the days since 1970
+			start = skipDaysBefore(start, assignment.getStart());
 		RangeIntervalGenerator dailyInRange = RangeIntervalGenerator.getInstance(start, end, Calendar.DATE);
 
 		Query.getInstance().selectFrom(clause)
 		.groupBy(dailyInRange)
 		.action(getter)
 		.execute();
+	}
+	/**
+	 * The start of the day, among the days counted from <code>from</code>, holding <code>date</code>.
+	 * The days before it hold no work, and the days after it stay the same as when counted from <code>from</code>.
+	 */
+	private static long skipDaysBefore(long from, long date) {
+		Calendar cal = new GregorianCalendar(); // as RangeIntervalGenerator counts the days
+		cal.setTimeInMillis(from);
+		int hour = cal.get(Calendar.HOUR_OF_DAY);
+		int minute = cal.get(Calendar.MINUTE);
+		int second = cal.get(Calendar.SECOND);
+		int millisecond = cal.get(Calendar.MILLISECOND);
+		cal.setTimeInMillis(date);
+		cal.set(Calendar.HOUR_OF_DAY, hour);
+		cal.set(Calendar.MINUTE, minute);
+		cal.set(Calendar.SECOND, second);
+		cal.set(Calendar.MILLISECOND, millisecond);
+		if (cal.getTimeInMillis() > date)
+			cal.add(Calendar.DATE, -1);
+		return Math.max(from, cal.getTimeInMillis());
 	}
 	public void consumeTimephased(Schedule schedule,TimephasedConsumer consumer,Object factory){ //claur removed exception
 		ObjectFactory mspdiTimephasedFactory=(ObjectFactory)factory;

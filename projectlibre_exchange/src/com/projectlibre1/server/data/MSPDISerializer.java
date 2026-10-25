@@ -343,12 +343,21 @@ public class MSPDISerializer implements ProjectSerializer {
 	}
 
 	public boolean saveProject(Project project,OutputStream out) {
+		return saveProject(project,out,true);
+	}
+
+	public boolean saveProject(Project project,OutputStream out,boolean formattedOutput) {
 		try {
 			//MSPDISerializer serializer=new MSPDISerializer();
 			if (job!=null) job.setProgress(0.05f,Messages.getString("SaveProgress.Preparing")); //$NON-NLS-1$
+			long t1=System.currentTimeMillis();
 			ModifiedMSPDIWriter data=/*serializer.*/serializeProject(project);
+			data.setFormattedOutput(formattedOutput);
+			long t2=System.currentTimeMillis();
+			System.out.println("MSPDI build...Done in "+(t2-t1)+" ms"); //$NON-NLS-1$ //$NON-NLS-2$
 			if (job!=null) job.setProgress(0.9f,Messages.getString("SaveProgress.Writing")); //$NON-NLS-1$
 			data.write(data.getProjectFile(),out);
+			System.out.println("MSPDI write...Done in "+(System.currentTimeMillis()-t2)+" ms"); //$NON-NLS-1$ //$NON-NLS-2$
 			if (job!=null) job.setProgress(1.0f);
 		} catch (Exception e) {
 			e.printStackTrace();

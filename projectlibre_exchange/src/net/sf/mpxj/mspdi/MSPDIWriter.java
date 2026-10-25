@@ -164,6 +164,27 @@ public class MSPDIWriter extends AbstractProjectWriter //claur final removed
    }
 
    /**
+    * Sets a flag to control whether the XML is indented. The default is true.
+    *
+    * @param value boolean flag
+    */
+   public void setFormattedOutput(boolean value) //claur indenting is not needed for the copy kept in .pod files
+   {
+      m_formattedOutput = value;
+   }
+
+   /**
+    * Retrieves the flag which controls whether the XML is indented.
+    * The default is true.
+    *
+    * @return boolean flag
+    */
+   public boolean getFormattedOutput()
+   {
+      return m_formattedOutput;
+   }
+
+   /**
     * {@inheritDoc}
     */
    @Override public void write(ProjectFile projectFile, OutputStream stream) throws IOException
@@ -180,7 +201,7 @@ public class MSPDIWriter extends AbstractProjectWriter //claur final removed
          m_eventManager = m_projectFile.getEventManager();
 
          Marshaller marshaller = CONTEXT.createMarshaller();
-         marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.TRUE);
+         marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, Boolean.valueOf(m_formattedOutput));
 
          m_extendedAttributesInUse = new HashSet<FieldType>();
 
@@ -2025,6 +2046,7 @@ public class MSPDIWriter extends AbstractProjectWriter //claur final removed
    private boolean m_writeTimphasedData;
 
    private SaveVersion m_saveVersion = SaveVersion.Project2016;
+   private boolean m_formattedOutput = true;
 
    private static final BigInteger BIGINTEGER_ZERO = BigInteger.valueOf(0);
 
