@@ -58,6 +58,7 @@ package com.projectlibre1.pm.dependency.autolink;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -65,6 +66,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 import com.projectlibre1.pm.availability.AvailabilityWarning;
@@ -101,6 +103,7 @@ class PersonSequencer {
 	private final Map<NormalTask, Long> finishes = new IdentityHashMap<NormalTask, Long>();
 	private final Set<Task> summaries = Collections.newSetFromMap(new IdentityHashMap<Task, Boolean>()); // above the tasks
 	private long finish = 0;
+	private final Map<WorkCalendar, Map<Long, Long>> adjusted = new IdentityHashMap<WorkCalendar, Map<Long, Long>>();
 
 	/**
 	 * @param tasks the tasks to order, in the order of the WBS
@@ -141,7 +144,7 @@ class PersonSequencer {
 				queues.get(resource).add(task);
 			}
 		}
-		List<NormalTask> ready = new ArrayList<NormalTask>();
+		Set<NormalTask> ready = Collections.newSetFromMap(new IdentityHashMap<NormalTask, Boolean>()); // not done yet
 		for (NormalTask task : tasks) {
 			int count = 0;
 			Set<NormalTask> predecessors = logic.get(task);
@@ -165,16 +168,36 @@ class PersonSequencer {
 		for (NormalTask task : tasks)
 			for (Task parent = task.getWbsParentTask(); parent != null && summaries.add(parent); parent = parent.getWbsParentTask());
 		Map<NormalTask, Long> readyAt = new IdentityHashMap<NormalTask, Long>(); // once the logic predecessors are finished
-		for (NormalTask task : ready)
+		// the tasks that can be chosen (ready, and in the WBS order next in their sequences), by start then WBS. A start
+		// only grows when a person gets busy, so it is calculated again only when the task comes first (lazily)
+		PriorityQueue<long[]> candidates = new PriorityQueue<long[]>(Math.max(1, tasks.size()), new Comparator<long[]>() {
+			public int compare(long[] a, long[] b) {
+				return a[0] != b[0] ? Long.compare(a[0], b[0]) : Long.compare(a[1], b[1]);
+			}
+		});
+		for (NormalTask task : ready) {
 			readyAt.put(task, readyAt(task, projectStart));
+			offer(task, readyAt, queues, candidates);
+		}
 		for (int done = 0; done < tasks.size(); done++) {
 			NormalTask best = null;
 			long bestStart = 0;
-			// in the WBS order, the next tasks of the people; if they all wait for links going up the WBS, any task
-			for (int pass = readyOrder ? 1 : 0; pass < 2 && best == null; pass++)
+			while (best == null && !candidates.isEmpty()) {
+				long[] candidate = candidates.poll();
+				NormalTask task = tasks.get((int) candidate[1]);
+				if (finishes.containsKey(task))
+					continue;
+				long start = start(task, readyAt.get(task));
+				if (start > candidate[0])
+					candidates.add(new long[] { start, candidate[1] });
+				else {
+					best = task;
+					bestStart = start;
+				}
+			}
+			// in the WBS order, if all the next tasks wait for links going up the WBS: any task ready
+			if (best == null)
 				for (NormalTask task : ready) {
-					if (pass == 0 && !isNext(task, queues))
-						continue;
 					long start = start(task, readyAt.get(task));
 					if (best == null || start < bestStart || (start == bestStart && index.get(task) < index.get(best))) {
 						best = task;
@@ -197,7 +220,10 @@ class PersonSequencer {
 			for (Object resource : people.get(best)) {
 				free.put(resource, Math.max(free.get(resource), end));
 				orders.get(resource).add(best);
-				queues.get(resource).remove(best);
+				Deque<NormalTask> queue = queues.get(resource);
+				queue.remove(best);
+				if (!readyOrder && ready.contains(queue.peekFirst())) // next in the WBS of the person
+					offer(queue.peekFirst(), readyAt, queues, candidates);
 			}
 			List<NormalTask> next = successors.get(best);
 			if (next != null)
@@ -207,9 +233,16 @@ class PersonSequencer {
 					if (count == 0 && !finishes.containsKey(successor)) {
 						readyAt.put(successor, readyAt(successor, projectStart));
 						ready.add(successor);
+						offer(successor, readyAt, queues, candidates);
 					}
 				}
 		}
+	}
+
+	/** Adds a task ready to the ones that can be chosen: in the WBS order, only if it is next in its sequences */
+	private void offer(NormalTask task, Map<NormalTask, Long> readyAt, Map<Object, Deque<NormalTask>> queues, PriorityQueue<long[]> candidates) {
+		if (readyOrder || isNext(task, queues))
+			candidates.add(new long[] { start(task, readyAt.get(task)), index.get(task) });
 	}
 
 	/** True if the task is the next one in the WBS of each of its people */
@@ -227,7 +260,18 @@ class PersonSequencer {
 		long start = readyAt;
 		for (Object resource : people.get(task))
 			start = Math.max(start, free.get(resource));
-		return task.getEffectiveWorkCalendar().adjustInsideCalendar(start, false);
+		return adjust(task.getEffectiveWorkCalendar(), start);
+	}
+
+	/** First working time of a calendar from a date. Remembered: the same dates come back often, as the ends of tasks */
+	private long adjust(WorkCalendar calendar, long date) {
+		Map<Long, Long> dates = adjusted.get(calendar);
+		if (dates == null)
+			adjusted.put(calendar, dates = new HashMap<Long, Long>());
+		Long result = dates.get(date);
+		if (result == null)
+			dates.put(date, result = calendar.adjustInsideCalendar(date, false));
+		return result;
 	}
 
 	/**
