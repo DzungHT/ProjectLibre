@@ -155,6 +155,8 @@ import com.projectlibre1.dialog.LaborCatalogDialog;
 import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
 import com.projectlibre1.dialog.ValidateLinksDialog;
+import com.projectlibre1.dialog.WrappedText;
+import com.projectlibre1.pm.criticalpath.Rescheduler;
 import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
@@ -202,6 +204,7 @@ import com.projectlibre1.menu.MenuActionConstants;
 import com.projectlibre1.menu.MenuActionsMap;
 import com.projectlibre1.menu.MenuManager;
 import com.projectlibre1.options.CalendarOption;
+import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.pm.graphic.TabbedNavigation;
@@ -1068,6 +1071,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
 		actionsMap.addHandler(ACTION_VALIDATE_LINKS, new ValidateLinksAction());
+		actionsMap.addHandler(ACTION_RESCHEDULE, new RescheduleAction());
 		actionsMap.addHandler(ACTION_RESOURCE_PLAN, new ResourcePlanAction());
 		actionsMap.addHandler(ACTION_ASSIGNMENT_BOARD, new AssignmentBoardAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
@@ -1900,6 +1904,31 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			DocumentFrame frame = getCurrentFrame();
 			frame.finishAnyOperations();
 			ValidateLinksDialog.show(frame, ScheduleValidator.validate(frame.getProject()));
+		}
+	}
+	/** Calculates the schedule of the whole project again, like opening it, and tells how many tasks moved */
+	public class RescheduleAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			Project project = frame.getProject();
+			Rescheduler result;
+			showWaitCursor(true);
+			try {
+				result = Rescheduler.reschedule(project);
+			} finally {
+				showWaitCursor(false);
+			}
+			String before = EditOption.getInstance().getShortDateFormat().format(result.getFinishBefore());
+			String text = MessageFormat.format(Messages.getString(result.getChangedCount() == 0 ? "Reschedule.Same" : "Reschedule.Changed"), //$NON-NLS-1$ //$NON-NLS-2$
+					String.valueOf(result.getTaskCount()), String.valueOf(result.getChangedCount()), before)
+					+ " " + FinishSummary.finishText(project, project.getEnd(), "AutoLink.Finish"); //$NON-NLS-1$ //$NON-NLS-2$
+			JOptionPane.showMessageDialog(getFrameInstance(), WrappedText.text(text, 460), Messages.getString("Reschedule.Title"), //$NON-NLS-1$
+					JOptionPane.INFORMATION_MESSAGE);
 		}
 	}
 	/** Cancels or un-cancels the selected tasks */

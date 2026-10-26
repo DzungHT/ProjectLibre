@@ -153,6 +153,7 @@ public interface MenuActionConstants {
 	public static final String ACTION_UNCANCEL_TASK          = "UncancelTask";
 	public static final String ACTION_AUTO_LINK              = "AutoLink";
 	public static final String ACTION_VALIDATE_LINKS         = "ValidateLinks";
+	public static final String ACTION_RESCHEDULE             = "Reschedule";
 	public static final String ACTION_RESOURCE_PLAN         = "ResourcePlan";
 	public static final String ACTION_ASSIGNMENT_BOARD      = "AssignmentBoard";
 	public static final String ACTION_LABOR_CATALOG          = "LaborCatalog";
