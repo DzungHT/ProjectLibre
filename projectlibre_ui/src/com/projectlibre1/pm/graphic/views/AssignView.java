@@ -71,6 +71,7 @@ import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -90,6 +91,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.ListSelectionModel;
@@ -103,10 +105,12 @@ import javax.swing.table.TableCellRenderer;
 
 import com.projectlibre1.dialog.AutoLinkDialog;
 import com.projectlibre1.dialog.WrappedText;
+import com.projectlibre1.exchange.ulnl.UlnlWbsParser;
 import com.projectlibre1.menu.MenuActionConstants;
 import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.assignment.board.AssignmentBoard;
 import com.projectlibre1.pm.assignment.board.GanttAssigner;
+import com.projectlibre1.pm.assignment.board.SelectionTimeline;
 import com.projectlibre1.pm.dependency.autolink.FinishSummary;
 import com.projectlibre1.pm.graphic.frames.DocumentFrame;
 import com.projectlibre1.pm.graphic.model.cache.NodeModelCache;
@@ -136,6 +140,10 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 	private static final Color BAR_OK = new Color(0x4a, 0x90, 0xd9), BAR_WARNING = new Color(0xf0, 0xa0, 0x30), BAR_FAILED = new Color(0xd9, 0x40, 0x40);
 	private static final Color WARNING_COLOR = new Color(0xb2, 0x6a, 0x00), FAILED_COLOR = new Color(0xc0, 0x00, 0x00);
 	private static final Color HIGHLIGHT = new Color(0xff, 0xf2, 0xc4), DIMMED = new Color(0xa0, 0xa0, 0xa0);
+	private static final Color SECTION_BACKGROUND = new Color(0xee, 0xee, 0xee);
+	private static final int T_NAME = 0, T_FROM = 1, T_TO = 2, T_DAYS = 3, T_EFFORT = 4, T_UNASSIGNED = 5, T_BAR = 6;
+	private static final String[] T_HEADERS = { "AssignView.Line", "AssignView.From", "AssignView.To", "AssignView.Days", "AssignView.Effort", "AssignView.UnassignedColumn", "AssignView.Timeline" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+	private static final int[] T_WIDTHS = { 230, 82, 82, 60, 55, 60, 120 };
 	private static final String PREF_RELINK = "assignViewRelink"; //$NON-NLS-1$
 	private static final String PREF_AVAILABILITY = "assignViewAvailability"; //$NON-NLS-1$
 	private static final int CONTROLS_WIDTH = 230; // pixels of the column of the buttons, the check box wraps
@@ -166,6 +174,9 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 	private final JCheckBox relink;
 	private final JCheckBox byAvailability;
 	private AbstractTableModel personModel;
+	private AbstractTableModel timelineModel;
+	private JTable timelineTable;
+	private SelectionTimeline timeline;
 	private JTable personTable;
 	private final Timer refreshTimer;
 
@@ -206,7 +217,11 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		add(info, BorderLayout.NORTH);
 		add(createControls(), BorderLayout.WEST);
 		createPersonTable();
-		add(new JScrollPane(personTable), BorderLayout.CENTER);
+		createTimelineTable();
+		JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(personTable), new JScrollPane(timelineTable));
+		split.setResizeWeight(0.35);
+		split.setContinuousLayout(true);
+		add(split, BorderLayout.CENTER);
 		roleFilter.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				showPersons();
@@ -296,6 +311,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 				selectedHours.put(resource, (hours == null ? 0 : hours) + row.getHours() * board.share(row, resource));
 			}
 		showPersons();
+		showTimeline();
 		showInfo();
 	}
 
@@ -620,6 +636,158 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 					: loadStatus == AssignmentBoard.WARNING ? WARNING_COLOR : dim ? DIMMED : foreground);
 			g.drawString(text, w - textWidth - 4, (h + g.getFontMetrics().getAscent() - g.getFontMetrics().getDescent()) / 2);
 		}
+	}
+
+	// ---------------------------------------------------------------- the timeline
+
+	private void showTimeline() {
+		timeline = SelectionTimeline.create(assigner, UlnlWbsParser.DEFAULT_ACTIVITY_CODES, project.getEffectiveWorkCalendar());
+		timelineModel.fireTableDataChanged();
+	}
+
+	private List<SelectionTimeline.Line> lines() {
+		return timeline == null ? new ArrayList<SelectionTimeline.Line>() : timeline.getLines();
+	}
+
+	/** What a line is: the total, a section, an activity with its role, a skill, a person with its role, a cluster */
+	private static String label(SelectionTimeline.Line line) {
+		switch (line.getKind()) {
+		case SelectionTimeline.TOTAL:
+			return line.getName().length() == 0 ? Messages.getString("AssignView.Total") //$NON-NLS-1$
+					: MessageFormat.format(Messages.getString("AssignView.TotalOf"), line.getName()); //$NON-NLS-1$
+		case SelectionTimeline.SECTION:
+			return Messages.getString(SelectionTimeline.ACTIVITIES.equals(line.getName()) ? "AssignView.ByActivity" //$NON-NLS-1$
+					: SelectionTimeline.PEOPLE.equals(line.getName()) ? "AssignView.ByPerson" : "AssignView.ByCluster"); //$NON-NLS-1$ //$NON-NLS-2$
+		case SelectionTimeline.ACTIVITY:
+			return "    " + activityName(line.getActivity()) + (line.getRole() == null ? "" : " (" + line.getRole() + ")"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		case SelectionTimeline.SKILL:
+			return "        " + (line.getSkill().length() == 0 ? Messages.getString("AssignView.NoSkill") : line.getSkill()); //$NON-NLS-1$ //$NON-NLS-2$
+		case SelectionTimeline.PERSON:
+			String what = line.getRole() + (line.getSkill().length() == 0 ? "" : " " + line.getSkill()); //$NON-NLS-1$ //$NON-NLS-2$
+			return "    " + line.getName() + (what.length() == 0 ? "" : " (" + what + ")"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+		default:
+			return "    " + line.getName(); //$NON-NLS-1$
+		}
+	}
+
+	private static String activityName(String code) {
+		int index = Arrays.asList(UlnlWbsParser.DEFAULT_ACTIVITY_CODES).indexOf(code);
+		return index < 0 ? String.valueOf(code) : UlnlWbsParser.DEFAULT_ACTIVITY_NAMES[index];
+	}
+
+	private void createTimelineTable() {
+		timelineModel = new AbstractTableModel() {
+			private static final long serialVersionUID = 1L;
+			public int getRowCount() {
+				return lines().size();
+			}
+			public int getColumnCount() {
+				return T_HEADERS.length;
+			}
+			public String getColumnName(int column) {
+				return Messages.getString(T_HEADERS[column]);
+			}
+			public Object getValueAt(int index, int column) {
+				SelectionTimeline.Line line = lines().get(index);
+				if (column == T_NAME)
+					return label(line);
+				if (line.getKind() == SelectionTimeline.SECTION || line.getTasks() == 0)
+					return ""; //$NON-NLS-1$
+				switch (column) {
+				case T_FROM: return dateFormat.format(new Date(line.getStart()));
+				case T_TO: return dateFormat.format(new Date(line.getFinish() - 1)); // the end of the working time of a day
+				case T_DAYS: return decimal.format(line.getDays());
+				case T_EFFORT: return decimal.format(line.getHours() / NormalTask.HOURS_PER_MAN_DAY);
+				case T_UNASSIGNED: return line.getUnassigned() == 0 ? "" : String.valueOf(line.getUnassigned()); //$NON-NLS-1$
+				default: return null;
+				}
+			}
+		};
+		timelineTable = new JTable(timelineModel) {
+			private static final long serialVersionUID = 1L;
+			/** The bar takes the width left; a scroll bar when the other columns do not fit */
+			public boolean getScrollableTracksViewportWidth() {
+				return getParent() == null || getPreferredSize().width <= getParent().getWidth();
+			}
+			public String getToolTipText(MouseEvent e) {
+				int index = rowAtPoint(e.getPoint());
+				if (index < 0)
+					return null;
+				SelectionTimeline.Line line = lines().get(index);
+				if (line.getKind() == SelectionTimeline.SECTION || line.getTasks() == 0)
+					return null;
+				String text = MessageFormat.format(Messages.getString("AssignView.LineTooltip"), label(line).trim(), //$NON-NLS-1$
+						dateFormat.format(new Date(line.getStart())), dateFormat.format(new Date(line.getFinish() - 1)), decimal.format(line.getDays()),
+						String.valueOf(line.getTasks()), decimal.format(line.getHours() / NormalTask.HOURS_PER_MAN_DAY));
+				if (line.getUnassigned() > 0)
+					text += "<br>" + MessageFormat.format(Messages.getString("AssignView.UnassignedDates"), String.valueOf(line.getUnassigned())); //$NON-NLS-1$ //$NON-NLS-2$
+				return "<html>" + text + "</html>"; //$NON-NLS-1$ //$NON-NLS-2$
+			}
+		};
+		timelineTable.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
+		timelineTable.setRowSelectionAllowed(false);
+		timelineTable.getTableHeader().setReorderingAllowed(false);
+		TimelineRenderer renderer = new TimelineRenderer();
+		for (int i = 0; i < T_HEADERS.length; i++) {
+			JLabel title = new JLabel(Messages.getString(T_HEADERS[i]));
+			int width = Math.max(T_WIDTHS[i], title.getPreferredSize().width + 16);
+			timelineTable.getColumnModel().getColumn(i).setPreferredWidth(width);
+			timelineTable.getColumnModel().getColumn(i).setMinWidth(width); // never cut: a scroll bar instead
+			timelineTable.getColumnModel().getColumn(i).setCellRenderer(i == T_BAR ? new BarRenderer() : renderer);
+		}
+	}
+
+	/** The total and the sections in bold, the numbers right aligned, the unassigned tasks in orange */
+	private class TimelineRenderer extends DefaultTableCellRenderer {
+		private static final long serialVersionUID = 1L;
+		public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int index, int column) {
+			JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, false, false, index, column);
+			SelectionTimeline.Line line = lines().get(index);
+			int c = table.convertColumnIndexToModel(column);
+			int kind = line.getKind();
+			label.setHorizontalAlignment(c >= T_DAYS ? SwingConstants.RIGHT : SwingConstants.LEFT);
+			label.setFont(kind == SelectionTimeline.TOTAL || kind == SelectionTimeline.SECTION ? table.getFont().deriveFont(Font.BOLD) : table.getFont());
+			label.setForeground(c == T_UNASSIGNED ? WARNING_COLOR : table.getForeground());
+			label.setBackground(kind == SelectionTimeline.TOTAL ? HIGHLIGHT : kind == SelectionTimeline.SECTION ? SECTION_BACKGROUND : table.getBackground());
+			return label;
+		}
+	}
+
+	/** The dates of a line as a bar, on the scale of the total: by role for the activities and the people */
+	private class BarRenderer extends JComponent implements TableCellRenderer {
+		private static final long serialVersionUID = 1L;
+		private SelectionTimeline.Line line;
+		public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int index, int column) {
+			line = lines().get(index);
+			setBackground(line.getKind() == SelectionTimeline.TOTAL ? HIGHLIGHT : line.getKind() == SelectionTimeline.SECTION ? SECTION_BACKGROUND : table.getBackground());
+			return this;
+		}
+		protected void paintComponent(Graphics g) {
+			int w = getWidth(), h = getHeight();
+			g.setColor(getBackground());
+			g.fillRect(0, 0, w, h);
+			SelectionTimeline.Line total = timeline == null ? null : timeline.getTotal();
+			if (total == null || line.getTasks() == 0 || line.getKind() == SelectionTimeline.SECTION)
+				return;
+			double span = Math.max(1, total.getFinish() - total.getStart());
+			int x0 = 3 + (int) Math.round((w - 6) * (line.getStart() - total.getStart()) / span);
+			int x1 = 3 + (int) Math.round((w - 6) * (line.getFinish() - total.getStart()) / span);
+			g.setColor(barColor(line));
+			g.fillRect(x0, 4, Math.max(2, x1 - x0), h - 8);
+		}
+	}
+
+	private static Color barColor(SelectionTimeline.Line line) {
+		if (line.getKind() == SelectionTimeline.TOTAL)
+			return new Color(0x55, 0x55, 0x55);
+		String role = line.getRole() == null ? "" : line.getRole(); //$NON-NLS-1$
+		if (role.equalsIgnoreCase("BA")) //$NON-NLS-1$
+			return new Color(0x43, 0xa0, 0x47);
+		if (role.equalsIgnoreCase("DEV")) //$NON-NLS-1$
+			return BAR_OK;
+		if (role.equalsIgnoreCase("TESTER")) //$NON-NLS-1$
+			return BAR_WARNING;
+		return new Color(0x90, 0x90, 0x90);
 	}
 
 	// ---------------------------------------------------------------- BaseView

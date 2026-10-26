@@ -205,6 +205,15 @@ là một cửa sổ phụ dưới Gantt (như Histogram), để giao ngay trên
 - Bảng người như bên phải hộp thoại: role, kỹ năng, level, thanh tải, đã giao, số task, MD trong lựa chọn, **bắt đầu
   sớm nhất / kết thúc muộn nhất** của các task của người đó trong dự án. Người không làm được các task đang chọn bị làm
   mờ; người đang làm task trong lựa chọn được tô nền.
+- **Timeline của phần đang chọn** (A7, `SelectionTimeline`), bảng bên phải bảng người, tính từ ngày thật của dự án (sau
+  khi giao và nối lại chuỗi), với các cột từ ngày, đến ngày, số ngày làm việc, MD, số task chưa giao và một thanh trên
+  cùng thang thời gian của dòng Tổng:
+  - **Tổng**: các task hạng mục đang chọn (tên các module/cụm đang chọn).
+  - **Theo hạng mục**: Giải pháp (BA), Phát triển (DEV), Kiểm thử (TESTER), theo thứ tự của ULNL; Phát triển tách theo
+    kỹ năng yêu cầu (BE, FE...) khi có nhiều hơn một.
+  - **Theo người**: mỗi người làm task trong phần đang chọn, từ task đầu tới task cuối, MD là phần work của người đó.
+  - **Theo cụm con**: các cụm ngay dưới module/cụm đang chọn (hoặc từng cụm, khi chọn nhiều cụm).
+  - Task chưa giao vẫn tính vào khoảng ngày nhưng ngày của chúng chưa theo người nào: cột *Chưa giao* và tooltip báo.
 - Giao: chọn task hoặc module trên Gantt, nhấp đúp vào người (hoặc *Giao cho người đã chọn*). Cùng quy tắc với hộp thoại
   (mục 4.3): dưới dòng tổng hợp chỉ giao task đúng role/kỹ năng, task chọn trực tiếp sai role thì hỏi, task khoá giữ
   nguyên. *Bỏ giao* xoá người của các task đang chọn.
@@ -246,6 +255,7 @@ là một cửa sổ phụ dưới Gantt (như Histogram), để giao ngay trên
 | A4 | Giao việc trên Gantt: cửa sổ phụ dưới Gantt, ghi ngay và nối lại chuỗi theo người (mục 9) |
 | A5 | Giao cụm cho một nhóm trên Gantt: chia work theo Max Units, bỏ cảnh báo Nhiều người (mục 9) |
 | A6 | Nhóm theo ngày available: mỗi task chỉ giao người available trong thời gian của task, chọn lại tới khi ổn định (mục 9) |
+| A7 | Timeline của phần đang chọn: tổng, theo hạng mục (và kỹ năng), theo người, theo cụm con (mục 9) |
 
 Sau đó: bước 3 Re-link — mặc định nối task của mỗi người theo thứ tự WBS, đổi thứ tự ở bước đó.
 

@@ -85,6 +85,7 @@ public class GanttAssigner {
 	/** The tasks of the activities selected or below a summary selected, in the order of the WBS */
 	private final List<AssignmentBoard.Row> selected = new ArrayList<AssignmentBoard.Row>();
 	private final Set<AssignmentBoard.Row> belowSummary = Collections.newSetFromMap(new IdentityHashMap<AssignmentBoard.Row, Boolean>());
+	private final List<AssignmentBoard.Row> summaries = new ArrayList<AssignmentBoard.Row>();
 
 	/** Times the people are chosen again from the new dates, see apply() */
 	private static final int MAX_ROUNDS = 6;
@@ -129,10 +130,24 @@ public class GanttAssigner {
 			if (below || tasks.contains(row.getTask()))
 				selected.add(row);
 		}
+		List<AssignmentBoard.Row> rows = new ArrayList<AssignmentBoard.Row>(board.getRoots());
+		for (int i = 0; i < rows.size(); i++) {
+			AssignmentBoard.Row row = rows.get(i);
+			if (row.isActivity())
+				continue;
+			if (tasks.contains(row.getTask()))
+				summaries.add(row);
+			rows.addAll(row.getChildren());
+		}
 	}
 
 	public AssignmentBoard getBoard() {
 		return board;
+	}
+
+	/** The summaries selected, with tasks of activities below them */
+	public List<AssignmentBoard.Row> getSummaries() {
+		return summaries;
 	}
 
 	/** The tasks of the activities selected, and below the summaries selected */

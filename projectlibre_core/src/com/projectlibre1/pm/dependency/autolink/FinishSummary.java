@@ -106,7 +106,8 @@ public final class FinishSummary {
 		return days == Math.rint(days) ? String.valueOf((long) days) : String.valueOf(Math.round(days * 10) / 10.0);
 	}
 
-	private static double workingDays(WorkCalendar calendar, long later, long earlier) {
+	/** Working days from a date to a later one, unrounded */
+	public static double workingDays(WorkCalendar calendar, long later, long earlier) {
 		later -= later % MILLIS_PER_MINUTE; // compare() counts a working day too many for some dates within a minute
 		earlier -= earlier % MILLIS_PER_MINUTE;
 		if (later <= earlier)
