@@ -156,6 +156,7 @@ public interface MenuActionConstants {
 	public static final String ACTION_RESCHEDULE             = "Reschedule";
 	public static final String ACTION_RESOURCE_PLAN         = "ResourcePlan";
 	public static final String ACTION_ASSIGNMENT_BOARD      = "AssignmentBoard";
+	public static final String ACTION_ASSIGN_VIEW          = "AssignView";
 	public static final String ACTION_LABOR_CATALOG          = "LaborCatalog";
 	public static final String ACTION_SKILL_CATALOG          = "SkillCatalog";
 	public static final String ACTION_LABOR_COLUMNS          = "LaborColumns";

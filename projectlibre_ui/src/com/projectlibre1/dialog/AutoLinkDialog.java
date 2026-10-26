@@ -180,6 +180,23 @@ public final class AutoLinkDialog extends AbstractDialog {
 		return "autoLinkScope" + i; //$NON-NLS-1$
 	}
 
+	/** The options of the last Auto Link, with the links of the tasks of each person, for the whole project */
+	public static AutoLinkOptions savedSequenceOptions() {
+		Preferences preferences = Preferences.userNodeForPackage(AutoLinkDialog.class);
+		String[] codes = UlnlWbsParser.DEFAULT_ACTIVITY_CODES;
+		int[] values = new int[codes.length - 1];
+		for (int i = 0; i < values.length; i++)
+			values[i] = preferences.getInt(scopePreference(i), DEFAULT_SCOPES[Math.min(i, DEFAULT_SCOPES.length - 1)]);
+		AutoLinkOptions options = new AutoLinkOptions(codes, values, UlnlWbsParser.LANE_ACTIVITY_CODES);
+		options.setLinkActivities(preferences.getBoolean(PREF_ACTIVITIES, true));
+		options.setLinkSequences(true);
+		options.setReadyOrder(preferences.getBoolean(PREF_READY_ORDER, true));
+		options.setLinkUnassigned(preferences.getBoolean(PREF_UNASSIGNED, false));
+		options.setJoinConstraints(preferences.getBoolean(PREF_JOIN, true));
+		options.setActivityNames(UlnlWbsParser.DEFAULT_ACTIVITY_NAMES);
+		return options;
+	}
+
 	protected boolean bind(boolean get) {
 		if (get)
 			return true;

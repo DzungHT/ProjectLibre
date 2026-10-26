@@ -194,17 +194,40 @@ Dạng icon (không popup), trong hộp thoại và ở cột Indicators của b
 Tooltip ghi lý do cụ thể (ví dụ: *cần BE, DEV J #2 chỉ có FE*). Ở bảng task, icon riêng (người + tam giác cam) chỉ hiện
 với task hoạt động chưa hoàn thành, chưa cancel; tính lại mỗi lần vẽ từ phân công hiện có, không cần mở hộp thoại.
 
-## 9. Lộ trình
+## 9. Giao việc trên Gantt (A4)
+
+Hộp thoại trả lời *ai làm*, *đủ năng lực chưa*, nhưng không cho thấy module xong khi nào. Khung **Giao việc trên Gantt**
+là một cửa sổ phụ dưới Gantt (như Histogram), để giao ngay trên WBS của Gantt và nhìn thanh Gantt đổi theo.
+
+- Mở/đóng: nút *Giao việc trên Gantt* ở ribbon HTD Planner (nhóm Planning) và ở nhóm cửa sổ phụ của tab View. Đang ở
+  view không phải task thì chuyển sang Gantt.
+- Dòng trên: các task đang chọn trên Gantt (task, MD, số chưa giao, **từ ngày – đến ngày**, người làm), và kết quả lần
+  giao gần nhất: số task, kết thúc dự án trước → sau, so với deadline của Resource Plan.
+- Bảng người như bên phải hộp thoại: role, kỹ năng, level, thanh tải, đã giao, số task, MD trong lựa chọn, **bắt đầu
+  sớm nhất / kết thúc muộn nhất** của các task của người đó trong dự án. Người không làm được các task đang chọn bị làm
+  mờ; người đang làm task trong lựa chọn được tô nền.
+- Giao: chọn task hoặc module trên Gantt, nhấp đúp vào người (hoặc *Giao cho người đã chọn*). Cùng quy tắc với hộp thoại
+  (mục 4.3): dưới dòng tổng hợp chỉ giao task đúng role/kỹ năng, task chọn trực tiếp sai role thì hỏi, task khoá giữ
+  nguyên. *Bỏ giao* xoá người của các task đang chọn.
+- **Ghi ngay vào dự án** (`GanttAssigner`): ghi phân công như Apply của hộp thoại (mục 7), rồi nếu bật *Nối lại chuỗi
+  công việc của mỗi người* (mặc định bật, nhớ bằng `Preferences`) thì chạy Auto Link cho toàn bộ dự án với tuỳ chọn của
+  lần Auto Link gần nhất (luôn nối chuỗi theo người). Cả hai là **một bước Undo**. Có link vòng thì không đổi link, báo
+  số task.
+- Khung tự đọc lại sau mỗi lần lịch thay đổi (Undo, sửa trên Gantt, Auto Link), chậm 0,4 giây để gộp các thay đổi.
+- Đo trên dự án 2.940 task, 32 người: giao 18 task của một module và nối lại chuỗi mất khoảng 0,3 giây.
+
+## 10. Lộ trình
 
 | Giai đoạn | Nội dung |
 |---|---|
 | A1 | Hộp thoại: bảng task + bảng người, tải, giao tay hàng loạt, Giao cụm, Bỏ giao, cảnh báo, Apply (một Undo), đọc lại từ dự án |
 | A2 | Gợi ý + Chấp nhận đề xuất, khoá task (lưu trong dự án), tham số Gợi ý, kéo-thả task sang người |
 | A3 | Thay người, Chuyển bớt việc, Xuất Excel; icon Sai role / Thiếu kỹ năng / Nhiều người ở bảng task |
+| A4 | Giao việc trên Gantt: cửa sổ phụ dưới Gantt, ghi ngay và nối lại chuỗi theo người (mục 9) |
 
 Sau đó: bước 3 Re-link — mặc định nối task của mỗi người theo thứ tự WBS, đổi thứ tự ở bước đó.
 
-## 10. Đã chốt
+## 11. Đã chốt
 
 1. **Ngưỡng:** dùng chung ngưỡng thiếu/thừa của Resource Plan.
 2. **Module lớn:** người dùng tự đánh giá, chia thành các cấp WBS thấp hơn rồi giao từng phần. Không giới hạn MD/module/người.

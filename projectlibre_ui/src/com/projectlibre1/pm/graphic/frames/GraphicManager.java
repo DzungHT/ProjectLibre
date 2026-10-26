@@ -1074,6 +1074,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_RESCHEDULE, new RescheduleAction());
 		actionsMap.addHandler(ACTION_RESOURCE_PLAN, new ResourcePlanAction());
 		actionsMap.addHandler(ACTION_ASSIGNMENT_BOARD, new AssignmentBoardAction());
+		actionsMap.addHandler(ACTION_ASSIGN_VIEW, new AssignViewAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
@@ -2015,6 +2016,24 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	/** Shows or hides the people below the Gantt, to give them the tasks selected in it, see AssignView */
+	public class AssignViewAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			if (frame.getActiveBottomView() == frame.getAssignView()) {
+				frame.activateView(ACTION_NO_SUB_WINDOW);
+				return;
+			}
+			BaseView top = frame.getActiveTopView();
+			if (top == null || !top.showsTasks())
+				frame.activateGanttView();
+			frame.activateView(ACTION_ASSIGN_VIEW);
 		}
 	}
 	/** The labor categories: role, level, point and price of a man-month, imported from the NLTC table */

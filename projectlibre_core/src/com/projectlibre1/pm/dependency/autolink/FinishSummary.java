@@ -80,18 +80,23 @@ public final class FinishSummary {
 	/** A sentence for a finish (estimated or calculated), with the deadline if the Resource Plan has one */
 	public static String finishText(Project project, long finish, String key) {
 		DateFormat format = EditOption.getInstance().getShortDateFormat();
-		String text = MessageFormat.format(Messages.getString(key), format.format(finish));
+		return MessageFormat.format(Messages.getString(key), format.format(finish)) + " " + deadlineText(project, finish); //$NON-NLS-1$
+	}
+
+	/** A sentence for a finish compared to the deadline of the Resource Plan, or telling there is none */
+	public static String deadlineText(Project project, long finish) {
+		DateFormat format = EditOption.getInstance().getShortDateFormat();
 		ResourcePlanOptions options = ResourcePlanOptions.load(project);
 		if (options.getDeadline() == 0)
-			return text + " " + Messages.getString("AutoLink.NoDeadline"); //$NON-NLS-1$ //$NON-NLS-2$
+			return Messages.getString("AutoLink.NoDeadline"); //$NON-NLS-1$
 		WorkCalendar calendar = project.getEffectiveWorkCalendar();
 		long deadline = calendar.adjustInsideCalendar(options.getDeadline() + 24 * MILLIS_PER_HOUR, true); // end of the day
 		String day = format.format(options.getDeadline());
 		if (finish > deadline)
-			return text + " " + MessageFormat.format(Messages.getString("AutoLink.Late"), day, days(calendar, finish, deadline)); //$NON-NLS-1$ //$NON-NLS-2$
+			return MessageFormat.format(Messages.getString("AutoLink.Late"), day, days(calendar, finish, deadline)); //$NON-NLS-1$
 		String left = days(calendar, deadline, finish);
 		boolean beforeBuffer = workingDays(calendar, deadline, finish) >= options.getBuffer() - 1e-6;
-		return text + " " + MessageFormat.format(Messages.getString(beforeBuffer ? "AutoLink.OnTime" : "AutoLink.InBuffer"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		return MessageFormat.format(Messages.getString(beforeBuffer ? "AutoLink.OnTime" : "AutoLink.InBuffer"), //$NON-NLS-1$ //$NON-NLS-2$
 				day, left, String.valueOf(options.getBuffer()));
 	}
 

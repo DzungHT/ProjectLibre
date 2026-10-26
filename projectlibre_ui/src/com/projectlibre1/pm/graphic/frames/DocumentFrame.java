@@ -101,6 +101,7 @@ import com.projectlibre1.pm.graphic.spreadsheet.selection.event.SelectionNodeLis
 import com.projectlibre1.pm.graphic.timescale.CoordinatesConverter;
 import com.projectlibre1.pm.graphic.views.BaseView;
 import com.projectlibre1.pm.graphic.views.ChartView;
+import com.projectlibre1.pm.graphic.views.AssignView;
 import com.projectlibre1.pm.graphic.views.GanttView;
 import com.projectlibre1.pm.graphic.views.MainView;
 import com.projectlibre1.pm.graphic.views.PertView;
@@ -175,6 +176,7 @@ public class DocumentFrame extends NamedFrame implements
 	protected UsageDetailView taskUsageView;
 	protected UsageDetailView resourceUsageView;
 	protected BaseView reportView;
+	protected AssignView assignView;
 	private static ArrayList ganttColumns = null; // static is ok?
 	private FindDialog findDialog = null;
 	protected CoordinatesConverter coord;
@@ -990,6 +992,13 @@ public class DocumentFrame extends NamedFrame implements
 		return resourceUsageView;
 	}
 
+	/** The people below the Gantt, to give them the tasks selected in it */
+	public AssignView getAssignView() {
+		if (assignView == null)
+			assignView = new AssignView(this);
+		return assignView;
+	}
+
 	public void toggleMinWidth() {
 		boolean normalMinWidth = (activeTopView == null || activeTopView.hasNormalMinWidth())
 			&& (activeBottomView == null || activeBottomView.hasNormalMinWidth());
@@ -1035,6 +1044,8 @@ public class DocumentFrame extends NamedFrame implements
 			bottomView = getTaskUsageView();
 		else if (viewName.equals(ACTION_RESOURCE_USAGE))
 			bottomView = getResourceUsageView();
+		else if (viewName.equals(ACTION_ASSIGN_VIEW))
+			bottomView = getAssignView();
 		else if (viewName.equals(ACTION_NO_SUB_WINDOW))
 			deactivateBottomView();
 
@@ -1458,6 +1469,7 @@ public class DocumentFrame extends NamedFrame implements
 		taskUsageView = null;
 		resourceUsageView = null;
 		reportView = null;
+		assignView = null;
 		activeTopView = null;
 		activeBottomView = null;
 	}
@@ -1475,7 +1487,8 @@ public class DocumentFrame extends NamedFrame implements
 			projectView,
 			taskUsageView,
 			resourceUsageView,
-			reportView
+			reportView,
+			assignView
 		};
 		ArrayUtils.forAllDo(views,c);
 	}
