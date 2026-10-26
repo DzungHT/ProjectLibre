@@ -57,15 +57,23 @@ package com.projectlibre1.dialog;
 
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.prefs.Preferences;
 
+import javax.swing.BorderFactory;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.SwingConstants;
@@ -94,7 +102,12 @@ public final class EffortRatioDialog extends AbstractDialog {
 	/** Ratios, %, of a first project: the BA plan half of the ULNL, the DEV and the TESTER 80% */
 	private static final String[][] DEFAULT_PERCENTS = { { "GP", "50" }, { "PT", "80" }, { "KT", "80" } }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
 	private static final int MIN_PERCENT = 1, MAX_PERCENT = 200;
-	private static final double MILLIS_PER_DAY = NormalTask.HOURS_PER_MAN_DAY * 60 * 60 * 1000;
+	private static final double MILLIS_PER_HOUR = 60 * 60 * 1000;
+	/** Units of the effort, as in the Resource Plan, whose unit is shared */
+	private static final String[] UNITS = { "MH", "MD", "MM" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+	private static final double[] UNIT_HOURS = { 1, NormalTask.HOURS_PER_MAN_DAY, NormalTask.HOURS_PER_MAN_DAY * NormalTask.MAN_DAYS_PER_MAN_MONTH };
+	private static final String UNIT = "resourcePlan.unit"; //$NON-NLS-1$
+	private static final int DEFAULT_UNIT = 1;
 	private static final int WIDTH = 600;
 	private static final int ACTIVITY = 0, TASKS = 1, EDITED = 2, ESTIMATE = 3, RATIO = 4, PLANNED = 5, RESERVE = 6;
 
@@ -103,8 +116,13 @@ public final class EffortRatioDialog extends AbstractDialog {
 	private final int[] tasks = new int[activities.length];
 	/** Tasks not started whose work is not their planned estimate: changed by hand */
 	private final int[] edited = new int[activities.length];
-	private final double[] estimateDays = new double[activities.length];
-	private final NumberFormat days = NumberFormat.getNumberInstance();
+	private final double[] estimateHours = new double[activities.length];
+	/** Titles of the columns, {0} being the unit of the effort columns */
+	private final String[] titles = { Messages.getString("EffortRatio.Activity"), Messages.getString("EffortRatio.Tasks"), //$NON-NLS-1$ //$NON-NLS-2$
+			Messages.getString("EffortRatio.Edited"), Messages.getString("EffortRatio.Estimate"), Messages.getString("EffortRatio.Ratio"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+			Messages.getString("EffortRatio.Planned"), Messages.getString("EffortRatio.Reserve") }; //$NON-NLS-1$ //$NON-NLS-2$
+	private final NumberFormat unitFormat = NumberFormat.getNumberInstance();
+	private int unit = DEFAULT_UNIT; // index in UNITS
 	private JTable table;
 	private JCheckBox includeEdited;
 	private Map<String, Double> ratios;
@@ -130,8 +148,6 @@ public final class EffortRatioDialog extends AbstractDialog {
 
 	private EffortRatioDialog(Project project) {
 		super(GraphicManager.getFrameInstance(), Messages.getString("EffortRatio.Title"), true); //$NON-NLS-1$
-		days.setMinimumFractionDigits(2);
-		days.setMaximumFractionDigits(2);
 		boolean set = !project.getEffortRatios().isEmpty();
 		for (int i = 0; i < activities.length; i++)
 			percents[i] = set ? (int) Math.round(project.getEffortRatio(activities[i]) * 100) : preferences.getInt(activities[i], defaultPercent(activities[i]));
@@ -144,10 +160,15 @@ public final class EffortRatioDialog extends AbstractDialog {
 			if (activity < 0 || task.isWbsParent() || task.isCancelled() || !task.hasOriginalEstimate())
 				continue;
 			tasks[activity]++;
-			estimateDays[activity] += task.getOriginalEstimate() / MILLIS_PER_DAY;
+			estimateHours[activity] += task.getOriginalEstimate() / MILLIS_PER_HOUR;
 			if (task.getActualWork(null) == 0 && !task.isWorkPlannedEstimate(task.getWork(null)))
 				edited[activity]++;
 		}
+		try {
+			unit = Math.max(0, Math.min(UNITS.length - 1, preferences.parent().getInt(UNIT, DEFAULT_UNIT)));
+		} catch (Exception e) { // preferences not available
+		}
+		setUnitFormat();
 	}
 
 	private static int defaultPercent(String activity) {
@@ -182,17 +203,14 @@ public final class EffortRatioDialog extends AbstractDialog {
 		final int totalRow = activities.length;
 		table = new JTable(new AbstractTableModel() {
 			private static final long serialVersionUID = 1L;
-			private final String[] header = { Messages.getString("EffortRatio.Activity"), Messages.getString("EffortRatio.Tasks"), //$NON-NLS-1$ //$NON-NLS-2$
-					Messages.getString("EffortRatio.Edited"), Messages.getString("EffortRatio.Estimate"), Messages.getString("EffortRatio.Ratio"), //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-					Messages.getString("EffortRatio.Planned"), Messages.getString("EffortRatio.Reserve") }; //$NON-NLS-1$ //$NON-NLS-2$
 			public int getRowCount() {
 				return activities.length + 1;
 			}
 			public int getColumnCount() {
-				return header.length;
+				return titles.length;
 			}
 			public String getColumnName(int column) {
-				return header[column];
+				return columnName(column, UNITS[unit]);
 			}
 			public Class<?> getColumnClass(int column) {
 				return column == RATIO ? Integer.class : Object.class;
@@ -208,13 +226,13 @@ public final class EffortRatioDialog extends AbstractDialog {
 				case EDITED:
 					return edited[row];
 				case ESTIMATE:
-					return days.format(estimateDays[row]);
+					return amount(estimateHours[row]);
 				case RATIO:
 					return percents[row];
 				case PLANNED:
-					return days.format(planned(row));
+					return amount(planned(row));
 				default:
-					return days.format(estimateDays[row] - planned(row));
+					return amount(estimateHours[row] - planned(row));
 				}
 			}
 			private Object totalAt(int column) {
@@ -222,7 +240,7 @@ public final class EffortRatioDialog extends AbstractDialog {
 				double estimate = 0, planned = 0;
 				for (int i = 0; i < activities.length; i++) {
 					count += column == EDITED ? edited[i] : tasks[i];
-					estimate += estimateDays[i];
+					estimate += estimateHours[i];
 					planned += planned(i);
 				}
 				switch (column) {
@@ -232,13 +250,13 @@ public final class EffortRatioDialog extends AbstractDialog {
 				case EDITED:
 					return count;
 				case ESTIMATE:
-					return days.format(estimate);
+					return amount(estimate);
 				case RATIO:
 					return estimate == 0 ? null : (int) Math.round(planned / estimate * 100);
 				case PLANNED:
-					return days.format(planned);
+					return amount(planned);
 				default:
-					return days.format(estimate - planned);
+					return amount(estimate - planned);
 				}
 			}
 			public boolean isCellEditable(int row, int column) {
@@ -250,24 +268,38 @@ public final class EffortRatioDialog extends AbstractDialog {
 				percents[row] = Math.max(MIN_PERCENT, Math.min(MAX_PERCENT, ((Number) value).intValue()));
 				fireTableRowsUpdated(row, totalRow);
 			}
-		});
+		}) {
+			private static final long serialVersionUID = 1L;
+			// as in the Resource Plan: white cells can be typed, gray ones cannot, the total is a blue row in bold
+			public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+				Component c = super.prepareRenderer(renderer, row, column);
+				boolean total = row == totalRow;
+				if (!isCellSelected(row, column))
+					c.setBackground(total ? ResourcePlanDialog.TOTAL : isCellEditable(row, column) ? getBackground() : ResourcePlanDialog.READ_ONLY);
+				c.setFont(total ? getFont().deriveFont(Font.BOLD) : getFont());
+				return c;
+			}
+		};
 		DefaultTableCellRenderer renderer = new DefaultTableCellRenderer() {
 			private static final long serialVersionUID = 1L;
 			public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
 				Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
 				setHorizontalAlignment(column == ACTIVITY ? SwingConstants.LEFT : SwingConstants.RIGHT);
-				c.setFont(c.getFont().deriveFont(row == totalRow ? Font.BOLD : Font.PLAIN));
 				return c;
 			}
 		};
 		table.setDefaultRenderer(Object.class, renderer);
 		table.setDefaultRenderer(Integer.class, renderer);
-		// each column is as wide as its title, so that no title is cut whatever the language
+		// each column is as wide as its title in any unit, so that no title is cut whatever the language
 		TableCellRenderer headerRenderer = table.getTableHeader().getDefaultRenderer();
 		int tableWidth = 0;
 		for (int column = ACTIVITY; column <= RESERVE; column++) {
 			TableColumn tableColumn = table.getColumnModel().getColumn(column);
-			int titleWidth = headerRenderer.getTableCellRendererComponent(table, tableColumn.getHeaderValue(), false, false, -1, column).getPreferredSize().width;
+			int titleWidth = 0;
+			for (String unitName : UNITS) {
+				String title = columnName(column, unitName);
+				titleWidth = Math.max(titleWidth, headerRenderer.getTableCellRendererComponent(table, title, false, false, -1, column).getPreferredSize().width);
+			}
 			tableColumn.setPreferredWidth(Math.max(column == ACTIVITY ? 130 : 70, titleWidth + 12));
 			tableWidth += tableColumn.getPreferredWidth();
 		}
@@ -285,14 +317,60 @@ public final class EffortRatioDialog extends AbstractDialog {
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		builder.append(WrappedText.label(Messages.getString("EffortRatio.Help"), WIDTH)); //$NON-NLS-1$
+		builder.append(unitChooser());
 		builder.append(scroll);
 		builder.append(includeEdited);
 		builder.append(WrappedText.label(Messages.getString("EffortRatio.Note"), WIDTH)); //$NON-NLS-1$
 		return builder.getPanel();
 	}
 
-	/** Effort planned for an activity with the ratio typed, man-days */
+	/** Effort planned for an activity with the ratio typed, man-hours */
 	private double planned(int activity) {
-		return estimateDays[activity] * percents[activity] / 100.0;
+		return estimateHours[activity] * percents[activity] / 100.0;
+	}
+
+	/** Man-hours in the unit shown */
+	private String amount(double hours) {
+		return unitFormat.format(hours / UNIT_HOURS[unit]);
+	}
+
+	/** Title of a column, with the unit for the effort columns */
+	private String columnName(int column, String unitName) {
+		return column == ESTIMATE || column == PLANNED || column == RESERVE ? MessageFormat.format(titles[column], unitName) : titles[column];
+	}
+
+	private void setUnitFormat() {
+		unitFormat.setMinimumFractionDigits(0);
+		unitFormat.setMaximumFractionDigits(unit == 2 ? 2 : 1); // the man-months are small numbers
+	}
+
+	/** A choice of the unit of the effort columns, the same as the one of the Resource Plan: changing one changes both */
+	private JComponent unitChooser() {
+		final JComboBox units = new JComboBox(UNITS);
+		units.setSelectedIndex(unit);
+		units.setToolTipText(Messages.getString("EffortRatio.UnitTooltip")); //$NON-NLS-1$
+		units.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				if (table.isEditing())
+					table.getCellEditor().stopCellEditing();
+				unit = units.getSelectedIndex();
+				setUnitFormat();
+				for (int column = 0; column < table.getColumnCount(); column++)
+					table.getColumnModel().getColumn(column).setHeaderValue(table.getModel().getColumnName(column));
+				table.getTableHeader().repaint();
+				((AbstractTableModel) table.getModel()).fireTableDataChanged();
+				try {
+					preferences.parent().putInt(UNIT, unit);
+				} catch (Exception ex) { // preferences not available: kept until the dialog is closed
+				}
+			}
+		});
+		JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+		JLabel label = new JLabel(Messages.getString("ResourcePlan.Unit")); //$NON-NLS-1$
+		label.setToolTipText(units.getToolTipText());
+		label.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 5));
+		panel.add(label);
+		panel.add(units);
+		return panel;
 	}
 }

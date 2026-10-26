@@ -1380,10 +1380,12 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		}
 	}
 
+	/** Backgrounds of the cells that cannot be changed and of the rows of totals, also used by EffortRatioDialog */
+	static final Color READ_ONLY = new Color(242, 242, 242), TOTAL = new Color(225, 232, 242);
+
 	/** Gray background for the cells that cannot be changed, and a tooltip on each header telling what the column is */
 	private static class PlanTable extends JTable {
 		private static final long serialVersionUID = 1L;
-		private static final Color READ_ONLY = new Color(242, 242, 242), TOTAL = new Color(225, 232, 242);
 		private final String[] headers;
 		PlanTable(AbstractTableModel model, String[] headers) {
 			super(model);
