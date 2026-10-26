@@ -59,7 +59,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.projectlibre1.pm.dependency.autolink.AutoLinkOptions;
@@ -69,8 +71,9 @@ import com.projectlibre1.pm.resource.Resource;
 import com.projectlibre1.pm.task.Project;
 
 /**
- * Assigns the tasks selected in the Gantt to a person, with the rules of the Assignment board: a task selected goes
- * to the person, below a summary selected only the tasks of the role and skill of the person. Then the tasks of each
+ * Assigns the tasks selected in the Gantt to a person or a group, with the rules of the Assignment board: a task selected goes
+ * to the person, below a summary selected only the tasks of the role and skill of the person. A group shares each task
+ * between its people of the role and skill of the task, by their Max Units. Then the tasks of each
  * person are linked again by Auto Link, in the same undo step, so that the Gantt shows at once when the module is
  * done. See docs/assignment-design.md section 9.
  */
@@ -123,18 +126,30 @@ public class GanttAssigner {
 		return selected;
 	}
 
-	/** The tasks selected that go to a person: the tasks selected themselves, and below a summary the ones it can do */
-	public List<AssignmentBoard.Row> tasksFor(AssignmentBoard.Person person) {
-		List<AssignmentBoard.Row> result = new ArrayList<AssignmentBoard.Row>();
-		for (AssignmentBoard.Row row : selected)
-			if (!belowSummary.contains(row) || AssignmentBoard.canDo(person, row))
-				result.add(row);
+
+	/**
+	 * The people of a group that each task selected gets: the ones of its role and skill. A task selected itself, not
+	 * below a summary selected, goes to a single person even if it is not of its role (the caller asks first). The
+	 * tasks no one of the group can do are not in the result, and keep their people
+	 */
+	public Map<AssignmentBoard.Row, List<Resource>> tasksFor(List<AssignmentBoard.Person> group) {
+		Map<AssignmentBoard.Row, List<Resource>> result = new LinkedHashMap<AssignmentBoard.Row, List<Resource>>();
+		for (AssignmentBoard.Row row : selected) {
+			List<Resource> people = new ArrayList<Resource>();
+			for (AssignmentBoard.Person person : group)
+				if (AssignmentBoard.canDo(person, row))
+					people.add(person.getResource());
+			if (people.isEmpty() && group.size() == 1 && !belowSummary.contains(row))
+				people.add(group.get(0).getResource());
+			if (!people.isEmpty())
+				result.put(row, people);
+		}
 		return result;
 	}
 
-	/** True if a person can do all the tasks selected that would go to it, and at least one */
+	/** True if a person can do all the tasks selected that would go to it alone, and at least one */
 	public boolean canDo(AssignmentBoard.Person person) {
-		List<AssignmentBoard.Row> tasks = tasksFor(person);
+		Set<AssignmentBoard.Row> tasks = tasksFor(Collections.singletonList(person)).keySet();
 		for (AssignmentBoard.Row row : tasks)
 			if (!AssignmentBoard.canDo(person, row))
 				return false;
@@ -142,15 +157,20 @@ public class GanttAssigner {
 	}
 
 	/**
-	 * Gives tasks to a person, null removes their people, and writes them in the project. Then, if relink is not null,
-	 * links again the tasks of the people of the whole project with these options. A single undo step.
-	 * @param rows tasks of the board
+	 * Gives tasks to their people, an empty list removes them, and writes them in the project. The work of a task is
+	 * shared by ProjectLibre between its people by their units. Then, if relink is not null, links again the tasks of
+	 * the people of the whole project with these options: a task of a group is in the sequence of each of its people.
+	 * A single undo step.
+	 * @param people tasks of the board and their people
 	 */
-	public Result apply(List<AssignmentBoard.Row> rows, Resource resource, AutoLinkOptions relink, Object eventSource) {
+	public Result apply(Map<AssignmentBoard.Row, List<Resource>> people, AutoLinkOptions relink, Object eventSource) {
 		Result result = new Result();
 		Project project = board.getProject();
 		result.finishBefore = project.getEnd();
-		result.kept = board.assign(rows, resource);
+		for (Map.Entry<AssignmentBoard.Row, List<Resource>> entry : people.entrySet())
+			if (!board.setPeople(entry.getKey(), entry.getValue()))
+				result.kept++;
+		board.calculate();
 		result.assigned = board.getChangedRows().size();
 		project.beginUndoUpdate();
 		try {

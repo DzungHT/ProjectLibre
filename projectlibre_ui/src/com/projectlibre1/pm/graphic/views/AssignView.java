@@ -73,6 +73,7 @@ import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -94,6 +95,8 @@ import javax.swing.JTextArea;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.Timer;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellRenderer;
@@ -153,6 +156,9 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 	private String note = ""; //$NON-NLS-1$
 	private boolean dirty = true;
 	private boolean applying = false;
+	/** The people selected, kept while the list is read again */
+	private final List<Resource> selectedResources = new ArrayList<Resource>();
+	private boolean updatingPersons = false;
 
 	private final JTextArea info = new JTextArea();
 	private final JComboBox roleFilter = new JComboBox();
@@ -277,7 +283,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		for (AssignmentBoard.Row row : assigner.getSelected())
 			for (Resource resource : row.getResources()) {
 				Double hours = selectedHours.get(resource);
-				selectedHours.put(resource, (hours == null ? 0 : hours) + row.getHours() / row.getResources().size());
+				selectedHours.put(resource, (hours == null ? 0 : hours) + row.getHours() * board.share(row, resource));
 			}
 		showPersons();
 		showInfo();
@@ -286,15 +292,19 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 	private void showPersons() {
 		if (board == null)
 			return;
-		AssignmentBoard.Person selected = selectedPerson();
-		persons.clear();
-		for (AssignmentBoard.Person person : board.getPersons())
-			if (roleFilter.getSelectedIndex() <= 0 || person.getRole().equals(roleFilter.getSelectedItem()))
-				persons.add(person);
-		personModel.fireTableDataChanged();
-		int index = persons.indexOf(selected);
-		if (index >= 0)
-			personTable.setRowSelectionInterval(index, index);
+		updatingPersons = true; // the people selected stay selected, to give them the next module
+		try {
+			persons.clear();
+			for (AssignmentBoard.Person person : board.getPersons())
+				if (roleFilter.getSelectedIndex() <= 0 || person.getRole().equals(roleFilter.getSelectedItem()))
+					persons.add(person);
+			personModel.fireTableDataChanged();
+			for (int index = 0; index < persons.size(); index++)
+				if (selectedResources.contains(persons.get(index).getResource()))
+					personTable.addRowSelectionInterval(index, index);
+		} finally {
+			updatingPersons = false;
+		}
 	}
 
 	/** What is selected in the Gantt: the number of tasks, their effort, their dates and their people */
@@ -328,38 +338,51 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		revalidate();
 	}
 
-	private AssignmentBoard.Person selectedPerson() {
-		int index = personTable == null ? -1 : personTable.getSelectedRow();
-		return index < 0 || index >= persons.size() ? null : persons.get(index);
+	/** The people selected in the list: one person, or a group */
+	private List<AssignmentBoard.Person> selectedPersons() {
+		List<AssignmentBoard.Person> result = new ArrayList<AssignmentBoard.Person>();
+		if (personTable != null)
+			for (int index : personTable.getSelectedRows())
+				if (index < persons.size())
+					result.add(persons.get(index));
+		return result;
 	}
 
 	// ---------------------------------------------------------------- actions
 
-	/** Gives the tasks selected to the person selected, after asking if some are not of its role or skill */
+	/**
+	 * Gives the tasks selected to the person or the group selected. A group shares each task between its people of
+	 * the role and skill of the task. A single person is asked first for the tasks selected not of its role or skill
+	 */
 	private void assignSelected() {
-		AssignmentBoard.Person person = selectedPerson();
+		List<AssignmentBoard.Person> group = selectedPersons();
 		if (assigner == null || assigner.getSelected().isEmpty()) {
 			message(Messages.getString("AssignView.ChooseTasks")); //$NON-NLS-1$
 			return;
 		}
-		if (person == null) {
+		if (group.isEmpty()) {
 			message(Messages.getString("AssignView.ChoosePerson")); //$NON-NLS-1$
 			return;
 		}
-		List<AssignmentBoard.Row> tasks = assigner.tasksFor(person);
+		List<Resource> resources = new ArrayList<Resource>();
+		for (AssignmentBoard.Person person : group)
+			resources.add(person.getResource());
+		String names = AssignmentBoard.names(resources);
+		Map<AssignmentBoard.Row, List<Resource>> tasks = assigner.tasksFor(group);
 		if (tasks.isEmpty()) {
-			message(MessageFormat.format(Messages.getString("AssignmentBoard.NoTaskFits"), person.getName())); //$NON-NLS-1$
+			message(MessageFormat.format(Messages.getString("AssignmentBoard.NoTaskFits"), names)); //$NON-NLS-1$
 			return;
 		}
 		int wrong = 0;
-		for (AssignmentBoard.Row row : tasks)
-			if (!AssignmentBoard.canDo(person, row))
-				wrong++;
+		if (group.size() == 1)
+			for (AssignmentBoard.Row row : tasks.keySet())
+				if (!AssignmentBoard.canDo(group.get(0), row))
+					wrong++;
 		if (wrong > 0 && JOptionPane.showConfirmDialog(this, MessageFormat.format(Messages.getString("AssignmentBoard.ConfirmMismatch"), //$NON-NLS-1$
-				String.valueOf(wrong), person.getName()), Messages.getString("AssignView.Title"), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) //$NON-NLS-1$
+				String.valueOf(wrong), names), Messages.getString("AssignView.Title"), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) //$NON-NLS-1$
 			return;
 		int others = assigner.getSelected().size() - tasks.size();
-		apply(tasks, person, others);
+		apply(tasks, names, others);
 	}
 
 	private void unassign() {
@@ -367,16 +390,18 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 			message(Messages.getString("AssignView.ChooseTasks")); //$NON-NLS-1$
 			return;
 		}
-		apply(assigner.getSelected(), null, 0);
+		Map<AssignmentBoard.Row, List<Resource>> tasks = new LinkedHashMap<AssignmentBoard.Row, List<Resource>>();
+		for (AssignmentBoard.Row row : assigner.getSelected())
+			tasks.put(row, new ArrayList<Resource>());
+		apply(tasks, null, 0);
 	}
 
 	/**
 	 * Writes the people of tasks, links again the tasks of the people, and tells what changed
-	 * @param person null to remove the people of the tasks
-	 * @param others tasks selected kept by their people, not of the role or skill of the person
+	 * @param names names of the people, null when their people are removed
+	 * @param others tasks selected kept by their people, not of the role or skill of the people
 	 */
-	private void apply(List<AssignmentBoard.Row> tasks, AssignmentBoard.Person person, int others) {
-		Resource resource = person == null ? null : person.getResource();
+	private void apply(Map<AssignmentBoard.Row, List<Resource>> tasks, String names, int others) {
 		if (!documentFrame.getGraphicManager().isDocumentWritable())
 			return;
 		documentFrame.finishAnyOperations();
@@ -384,7 +409,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		applying = true;
 		documentFrame.showWaitCursor(true);
 		try {
-			result = assigner.apply(tasks, resource, relink.isSelected() ? AutoLinkDialog.savedSequenceOptions() : null, this);
+			result = assigner.apply(tasks, relink.isSelected() ? AutoLinkDialog.savedSequenceOptions() : null, this);
 		} catch (Exception e) {
 			e.printStackTrace();
 			message(e.getMessage());
@@ -394,10 +419,10 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 			applying = false;
 		}
 		String count = String.valueOf(result.getAssigned());
-		StringBuilder text = new StringBuilder(person == null ? MessageFormat.format(Messages.getString("AssignView.Unassigned"), count) //$NON-NLS-1$
-				: MessageFormat.format(Messages.getString("AssignView.Assigned"), count, person.getName())); //$NON-NLS-1$
+		StringBuilder text = new StringBuilder(names == null ? MessageFormat.format(Messages.getString("AssignView.Unassigned"), count) //$NON-NLS-1$
+				: MessageFormat.format(Messages.getString("AssignView.Assigned"), count, names)); //$NON-NLS-1$
 		if (others > 0)
-			text.append(MessageFormat.format(Messages.getString("AssignmentBoard.OthersKept"), String.valueOf(others), person.getName())); //$NON-NLS-1$
+			text.append(MessageFormat.format(Messages.getString("AssignmentBoard.OthersKept"), String.valueOf(others), names)); //$NON-NLS-1$
 		if (result.getKept() > 0)
 			text.append(MessageFormat.format(Messages.getString("AssignmentBoard.LockedKept"), String.valueOf(result.getKept()))); //$NON-NLS-1$
 		text.append(". "); //$NON-NLS-1$
@@ -487,7 +512,16 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 				return "<html>" + text + "</html>"; //$NON-NLS-1$ //$NON-NLS-2$
 			}
 		};
-		personTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+		personTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION); // a group: Ctrl or Shift
+		personTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
+			public void valueChanged(ListSelectionEvent e) {
+				if (updatingPersons || e.getValueIsAdjusting())
+					return;
+				selectedResources.clear();
+				for (AssignmentBoard.Person person : selectedPersons())
+					selectedResources.add(person.getResource());
+			}
+		});
 		personTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 		personTable.getTableHeader().setReorderingAllowed(false);
 		PersonRenderer renderer = new PersonRenderer();

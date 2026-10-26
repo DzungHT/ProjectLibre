@@ -35,7 +35,7 @@ Phần chuỗi của Auto Link đổi như sau:
 
 - Link tạo ra là `isAuto()`: chạy lại thì xoá và tạo lại. Link làm tay không bị đụng; link làm tay trùng với link cần
   tạo thì giữ (đếm là *đã có*).
-- Task nhiều người (sửa tay): nằm trong chuỗi của từng người.
+- Task nhiều người (giao theo nhóm, hoặc sửa tay): nằm trong chuỗi của từng người, nên chỉ bắt đầu khi cả nhóm rảnh.
 
 ## 3. Thứ tự task của mỗi chuỗi
 
