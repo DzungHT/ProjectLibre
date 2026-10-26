@@ -216,6 +216,16 @@ là một cửa sổ phụ dưới Gantt (như Histogram), để giao ngay trên
     units bằng Max Units, duration = Work / tổng units. Tải trong hộp thoại và khung tính cùng tỉ lệ đó.
   - Auto Link đặt task vào chuỗi của từng người trong nhóm, nên các task của cụm làm lần lượt bằng cả nhóm: cụm kéo dài khoảng
     tổng work / năng lực nhóm, theo thứ tự sẵn sàng. Không task nào của một người chồng nhau.
+  - **Theo ngày available** (A6, ô *Với nhóm, mỗi task chỉ giao cho người available trong thời gian của task*, mặc định
+    bật, nhớ bằng `Preferences`): task nhóm chỉ giao cho người có Max Units > 0% suốt từ ngày bắt đầu tới ngày kết thúc
+    của task (`AvailabilityWarning.isAvailable`). Người vào dự án sau, rời dự án trước hoặc nghỉ 0% giữa chừng thì không
+    nhận task đó, những người còn lại trong nhóm chia nhau. Không ai available thì giao cho người available sớm nhất
+    (`availableFrom`), task chờ người đó (ràng buộc ngày vào dự án của Auto Link).
+  - Ngày phụ thuộc vào người được giao (ít người thì task dài hơn) và vào chuỗi, nên chọn lại người theo ngày mới, ghi và
+    nối lại chuỗi, lặp tới khi người không đổi nữa, tối đa 6 lần, trong cùng một bước Undo. Còn đổi sau 6 lần thì báo, giao
+    lại để chọn theo ngày mới nhất. Chỉ áp dụng cho task có từ 2 người hợp role trở lên; giao một người thì giữ nguyên.
+  - Ví dụ: cùng cụm 54 task, DEV thứ hai vào dự án 20/10: các task DEV trước 20/10 chỉ Dev A1 làm, sau đó hai người cùng
+    làm; ổn định sau 2 lần (0,4 giây), cụm xong 17/11. Không bật thì các task chờ người vào sau, cụm xong 26/11.
   - Nhóm đang chọn vẫn được giữ sau khi giao, để giao tiếp cụm khác.
   - Ví dụ (dự án 2.940 task): cụm 54 task giao cho 1 BA, 2 DEV (units 1,0 và 2,03), 1 TESTER; task PT 20h chia 6,6h và
     13,4h, kéo dài 6,6h; cụm xong 12/11, so với 26/11 khi nhóm chỉ có 1 DEV.
@@ -235,6 +245,7 @@ là một cửa sổ phụ dưới Gantt (như Histogram), để giao ngay trên
 | A3 | Thay người, Chuyển bớt việc, Xuất Excel; icon Sai role / Thiếu kỹ năng ở bảng task (bỏ cảnh báo Nhiều người ở A5) |
 | A4 | Giao việc trên Gantt: cửa sổ phụ dưới Gantt, ghi ngay và nối lại chuỗi theo người (mục 9) |
 | A5 | Giao cụm cho một nhóm trên Gantt: chia work theo Max Units, bỏ cảnh báo Nhiều người (mục 9) |
+| A6 | Nhóm theo ngày available: mỗi task chỉ giao người available trong thời gian của task, chọn lại tới khi ổn định (mục 9) |
 
 Sau đó: bước 3 Re-link — mặc định nối task của mỗi người theo thứ tự WBS, đổi thứ tự ở bước đó.
 

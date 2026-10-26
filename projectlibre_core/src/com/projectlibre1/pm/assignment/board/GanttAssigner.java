@@ -60,14 +60,17 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.projectlibre1.pm.availability.AvailabilityWarning;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkOptions;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
 import com.projectlibre1.pm.resource.Resource;
+import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 
 /**
@@ -83,11 +86,22 @@ public class GanttAssigner {
 	private final List<AssignmentBoard.Row> selected = new ArrayList<AssignmentBoard.Row>();
 	private final Set<AssignmentBoard.Row> belowSummary = Collections.newSetFromMap(new IdentityHashMap<AssignmentBoard.Row, Boolean>());
 
+	/** Times the people are chosen again from the new dates, see apply() */
+	private static final int MAX_ROUNDS = 6;
+
 	/** What a call of apply() did */
 	public static class Result {
-		int assigned, kept, circular;
-		boolean linked;
+		int assigned, kept, circular, left, waiting, rounds;
+		boolean linked, settled;
 		long finishBefore, finishAfter;
+		/** Tasks of a group without some of its people, not available during the task */
+		public int getLeft() { return left; }
+		/** Tasks of a group without anyone available, given to the ones available the soonest */
+		public int getWaiting() { return waiting; }
+		/** Times the people were written */
+		public int getRounds() { return rounds; }
+		/** False if the people still changed with the dates after the last time */
+		public boolean isSettled() { return settled; }
 		/** Tasks whose people were written */
 		public int getAssigned() { return assigned; }
 		/** Locked tasks kept */
@@ -160,34 +174,106 @@ public class GanttAssigner {
 	 * Gives tasks to their people, an empty list removes them, and writes them in the project. The work of a task is
 	 * shared by ProjectLibre between its people by their units. Then, if relink is not null, links again the tasks of
 	 * the people of the whole project with these options: a task of a group is in the sequence of each of its people.
-	 * A single undo step.
+	 * <p>
+	 * With byAvailability, a task of several people gets only the ones available (Max Units over 0%) from its start to
+	 * its finish; if none is, the ones available the soonest after its start, and it waits for them. As the dates
+	 * change with the people and the links, this is done again from the new dates until the people stay the same, at
+	 * most MAX_ROUNDS times. A single undo step.
 	 * @param people tasks of the board and their people
 	 */
-	public Result apply(Map<AssignmentBoard.Row, List<Resource>> people, AutoLinkOptions relink, Object eventSource) {
+	public Result apply(Map<AssignmentBoard.Row, List<Resource>> people, AutoLinkOptions relink, boolean byAvailability, Object eventSource) {
 		Result result = new Result();
 		Project project = board.getProject();
 		result.finishBefore = project.getEnd();
+		Map<NormalTask, List<Resource>> candidates = new LinkedHashMap<NormalTask, List<Resource>>();
 		for (Map.Entry<AssignmentBoard.Row, List<Resource>> entry : people.entrySet())
-			if (!board.setPeople(entry.getKey(), entry.getValue()))
-				result.kept++;
-		board.calculate();
-		result.assigned = board.getChangedRows().size();
+			candidates.put(entry.getKey().getTask(), entry.getValue());
+		Set<NormalTask> changed = Collections.newSetFromMap(new IdentityHashMap<NormalTask, Boolean>());
 		project.beginUndoUpdate();
 		try {
-			AssignmentBoardWriter.apply(board, eventSource); // its schedule is calculated: the plan reads the new durations
-			if (relink != null) {
-				AutoLinkPlan plan = AutoLinkPlan.create(project, null, relink);
-				result.circular = plan.getCircularTasks().size();
-				if (result.circular == 0) {
+			AssignmentBoard current = board;
+			for (int round = 0; round < MAX_ROUNDS; round++) {
+				if (round > 0)
+					current = AssignmentBoard.create(project); // the dates and the people written
+				Map<NormalTask, AssignmentBoard.Row> rows = new IdentityHashMap<NormalTask, AssignmentBoard.Row>();
+				for (AssignmentBoard.Row row : current.getActivities())
+					rows.put(row.getTask(), row);
+				int left = 0, waiting = 0, kept = 0;
+				for (Map.Entry<NormalTask, List<Resource>> entry : candidates.entrySet()) {
+					AssignmentBoard.Row row = rows.get(entry.getKey());
+					if (row == null)
+						continue;
+					List<Resource> chosen = entry.getValue();
+					if (byAvailability && chosen.size() > 1) {
+						List<Resource> available = available(chosen, row.getTask());
+						if (available.isEmpty()) {
+							available = soonest(chosen, row.getTask().getStart());
+							waiting++;
+						}
+						if (available.size() < chosen.size())
+							left++;
+						chosen = available;
+					}
+					if (new LinkedHashSet<Resource>(chosen).equals(new LinkedHashSet<Resource>(row.getResources())))
+						continue;
+					if (current.setPeople(row, chosen))
+						changed.add(row.getTask());
+					else
+						kept++;
+				}
+				result.left = left;
+				result.waiting = waiting;
+				if (round == 0)
+					result.kept = kept;
+				current.calculate();
+				if (round > 0 && current.getChangedRows().isEmpty()) {
+					result.settled = true;
+					break;
+				}
+				result.rounds = round + 1;
+				AssignmentBoardWriter.apply(current, eventSource); // its schedule is calculated: the plan reads the new durations
+				if (relink != null) {
+					AutoLinkPlan plan = AutoLinkPlan.create(project, null, relink);
+					result.circular = plan.getCircularTasks().size();
+					if (result.circular > 0)
+						break;
 					if (!plan.isEmpty())
 						AutoLinker.apply(project, plan, eventSource);
 					result.linked = true;
+				}
+				if (!byAvailability) {
+					result.settled = true;
+					break;
 				}
 			}
 		} finally {
 			project.endUndoUpdate();
 		}
+		result.assigned = changed.size();
 		result.finishAfter = project.getEnd();
+		return result;
+	}
+
+	/** The people available during a task, from its start to its finish */
+	private static List<Resource> available(List<Resource> people, NormalTask task) {
+		List<Resource> result = new ArrayList<Resource>();
+		for (Resource resource : people)
+			if (AvailabilityWarning.isAvailable(resource, task.getStart(), task.getEnd()))
+				result.add(resource);
+		return result;
+	}
+
+	/** The people available the soonest from a date, all of them if none ever is */
+	private static List<Resource> soonest(List<Resource> people, long date) {
+		long first = AvailabilityWarning.NEVER;
+		for (Resource resource : people)
+			first = Math.min(first, AvailabilityWarning.availableFrom(resource, date));
+		if (first == AvailabilityWarning.NEVER)
+			return people;
+		List<Resource> result = new ArrayList<Resource>();
+		for (Resource resource : people)
+			if (AvailabilityWarning.availableFrom(resource, date) == first)
+				result.add(resource);
 		return result;
 	}
 }

@@ -137,6 +137,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 	private static final Color WARNING_COLOR = new Color(0xb2, 0x6a, 0x00), FAILED_COLOR = new Color(0xc0, 0x00, 0x00);
 	private static final Color HIGHLIGHT = new Color(0xff, 0xf2, 0xc4), DIMMED = new Color(0xa0, 0xa0, 0xa0);
 	private static final String PREF_RELINK = "assignViewRelink"; //$NON-NLS-1$
+	private static final String PREF_AVAILABILITY = "assignViewAvailability"; //$NON-NLS-1$
 	private static final int CONTROLS_WIDTH = 230; // pixels of the column of the buttons, the check box wraps
 	private static final int REFRESH_DELAY = 400; // milliseconds after the last change of the schedule
 
@@ -163,6 +164,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 	private final JTextArea info = new JTextArea();
 	private final JComboBox roleFilter = new JComboBox();
 	private final JCheckBox relink;
+	private final JCheckBox byAvailability;
 	private AbstractTableModel personModel;
 	private JTable personTable;
 	private final Timer refreshTimer;
@@ -174,6 +176,13 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		decimal.setMaximumFractionDigits(1);
 		relink = WrappedText.wrap(new JCheckBox(Messages.getString("AssignView.Relink"), preferences.getBoolean(PREF_RELINK, true)), CONTROLS_WIDTH); //$NON-NLS-1$
 		relink.setToolTipText(WrappedText.text(Messages.getString("AssignView.RelinkTooltip"), 300)); //$NON-NLS-1$
+		byAvailability = WrappedText.wrap(new JCheckBox(Messages.getString("AssignView.ByAvailability"), preferences.getBoolean(PREF_AVAILABILITY, true)), CONTROLS_WIDTH); //$NON-NLS-1$
+		byAvailability.setToolTipText(WrappedText.text(Messages.getString("AssignView.ByAvailabilityTooltip"), 300)); //$NON-NLS-1$
+		byAvailability.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				preferences.putBoolean(PREF_AVAILABILITY, byAvailability.isSelected());
+			}
+		});
 		relink.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				preferences.putBoolean(PREF_RELINK, relink.isSelected());
@@ -227,6 +236,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 				unassign();
 			}
 		}), c);
+		panel.add(byAvailability, c);
 		panel.add(relink, c);
 		panel.add(button("AssignView.Board", new ActionListener() { //$NON-NLS-1$
 			public void actionPerformed(ActionEvent e) {
@@ -409,7 +419,7 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		applying = true;
 		documentFrame.showWaitCursor(true);
 		try {
-			result = assigner.apply(tasks, relink.isSelected() ? AutoLinkDialog.savedSequenceOptions() : null, this);
+			result = assigner.apply(tasks, relink.isSelected() ? AutoLinkDialog.savedSequenceOptions() : null, byAvailability.isSelected(), this);
 		} catch (Exception e) {
 			e.printStackTrace();
 			message(e.getMessage());
@@ -425,6 +435,11 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 			text.append(MessageFormat.format(Messages.getString("AssignmentBoard.OthersKept"), String.valueOf(others), names)); //$NON-NLS-1$
 		if (result.getKept() > 0)
 			text.append(MessageFormat.format(Messages.getString("AssignmentBoard.LockedKept"), String.valueOf(result.getKept()))); //$NON-NLS-1$
+		if (result.getLeft() > 0)
+			text.append(MessageFormat.format(Messages.getString("AssignView.Left"), String.valueOf(result.getLeft()), //$NON-NLS-1$
+					String.valueOf(result.getWaiting()), String.valueOf(result.getRounds())));
+		if (!result.isSettled() && result.getCircular() == 0)
+			text.append(Messages.getString("AssignView.NotSettled")); //$NON-NLS-1$
 		text.append(". "); //$NON-NLS-1$
 		if (result.getCircular() > 0)
 			text.append(MessageFormat.format(Messages.getString("AssignView.Circular"), String.valueOf(result.getCircular()))); //$NON-NLS-1$
