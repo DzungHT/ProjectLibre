@@ -62,6 +62,7 @@ import java.text.MessageFormat;
 import java.util.List;
 import java.util.prefs.Preferences;
 
+import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.ButtonGroup;
 import javax.swing.JCheckBox;
@@ -98,7 +99,7 @@ public final class AutoLinkDialog extends AbstractDialog {
 	private static final int[] DEFAULT_SCOPES = { AutoLinkOptions.ROW, AutoLinkOptions.FUNCTION };
 	private static final int[] SCOPE_VALUES = { AutoLinkOptions.ROW, AutoLinkOptions.FUNCTION };
 	private static final int MAX_CIRCULAR_TASKS_SHOWN = 5;
-	private static final int INDENT = 20; // pixels, for the options below a check box
+	private static final int WIDTH = 540; // pixels of the content, the long texts wrap
 
 	private final String[] activityNames = UlnlWbsParser.DEFAULT_ACTIVITY_NAMES;
 	private final String[] activityCodes = UlnlWbsParser.DEFAULT_ACTIVITY_CODES;
@@ -168,7 +169,7 @@ public final class AutoLinkDialog extends AbstractDialog {
 				updatePreview();
 			}
 		};
-		for (javax.swing.AbstractButton button : new javax.swing.AbstractButton[] { wholeProject, selectedTasks, linkActivities, linkSequences,
+		for (AbstractButton button : new AbstractButton[] { wholeProject, selectedTasks, linkActivities, linkSequences,
 				readyOrder, wbsOrder, linkUnassigned, joinConstraints })
 			button.addActionListener(listener);
 		for (JComboBox scope : scopes)
@@ -201,37 +202,31 @@ public final class AutoLinkDialog extends AbstractDialog {
 	public JComponent createContentPanel() {
 		updatePreview();
 		// a single column: the options below a check box are indented by a border
-		FormLayout layout = new FormLayout("300dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		FormLayout layout = new FormLayout(WrappedText.column(WIDTH), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		builder.appendSeparator(Messages.getString("AutoLink.Scope")); //$NON-NLS-1$
-		builder.append(wholeProject);
-		builder.append(selectedTasks);
+		builder.append(WrappedText.wrap(wholeProject, WIDTH));
+		builder.append(WrappedText.wrap(selectedTasks, WIDTH));
 		builder.appendSeparator(Messages.getString("AutoLink.Rules")); //$NON-NLS-1$
-		builder.append(linkActivities);
+		builder.append(WrappedText.wrap(linkActivities, WIDTH));
 		for (int i = 0; i < scopes.length; i++) {
 			JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 			row.add(new JLabel(activityNames[i] + " → " + activityNames[i + 1])); //$NON-NLS-1$
 			row.add(scopes[i]);
 			builder.append(indented(row));
 		}
-		builder.append(linkSequences);
-		builder.append(indented(html(Messages.getString("AutoLink.SequencesHelp"), 400))); //$NON-NLS-1$
-		builder.append(indented(readyOrder));
-		builder.append(indented(wbsOrder));
-		builder.append(indented(linkUnassigned));
-		builder.append(indented(joinConstraints));
+		builder.append(WrappedText.wrap(linkSequences, WIDTH));
+		builder.append(indented(WrappedText.label(Messages.getString("AutoLink.SequencesHelp"), WIDTH - WrappedText.INDENT))); //$NON-NLS-1$
+		for (AbstractButton option : new AbstractButton[] { readyOrder, wbsOrder, linkUnassigned, joinConstraints })
+			builder.append(WrappedText.wrap(indented(option), WIDTH));
 		builder.appendSeparator(Messages.getString("AutoLink.Preview")); //$NON-NLS-1$
 		builder.append(preview);
 		return builder.getPanel();
 	}
 
-	private static JLabel html(String text, int width) {
-		return new JLabel("<html><div style='width:" + width + "px'>" + text + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-	}
-
-	private static JComponent indented(JComponent component) {
-		component.setBorder(BorderFactory.createEmptyBorder(0, INDENT, 0, 0));
+	private static <T extends JComponent> T indented(T component) {
+		component.setBorder(BorderFactory.createEmptyBorder(0, WrappedText.INDENT, 0, 0));
 		return component;
 	}
 
@@ -249,7 +244,7 @@ public final class AutoLinkDialog extends AbstractDialog {
 		return options;
 	}
 
-	/** Always the same number of lines, so the dialog never needs resizing */
+	/** The same lines whatever the options; the dialog grows if a line wraps more */
 	private void updatePreview() {
 		for (JComboBox scope : scopes)
 			scope.setEnabled(linkActivities.isSelected());
@@ -279,7 +274,9 @@ public final class AutoLinkDialog extends AbstractDialog {
 		text.append("<br>").append(warnings.length() == 0 ? "&nbsp;" : "<font color='#c06000'>" + warnings + "</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
 		text.append("<br>").append(plan.getCircularTasks().isEmpty() ? "&nbsp;" //$NON-NLS-1$ //$NON-NLS-2$
 				: "<font color='red'>" + Messages.getString("AutoLink.Circular") + "</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		preview.setText("<html><div style='width:420px'>" + text + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$
+		preview.setText(WrappedText.html(text.toString(), WIDTH));
+		if (isShowing() && preview.getPreferredSize().height > preview.getHeight())
+			pack(); // a longer preview is never cut
 	}
 
 	private String circularMessage() {

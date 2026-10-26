@@ -172,7 +172,7 @@ public final class UlnlDiffDialog extends AbstractDialog {
 		tools.add(none);
 		tools.add(selected);
 
-		FormLayout layout = new FormLayout("460dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		FormLayout layout = new FormLayout(WrappedText.column(740), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		builder.append(new JLabel("<html>" + MessageFormat.format(Messages.getString("UlnlDiff.Summary"), //$NON-NLS-1$ //$NON-NLS-2$
@@ -181,7 +181,7 @@ public final class UlnlDiffDialog extends AbstractDialog {
 				String.valueOf(counts[UlnlWbsDiff.REMOVED]), String.valueOf(counts[UlnlWbsDiff.RESTORED])) + "</html>")); //$NON-NLS-1$
 		builder.append(tools);
 		builder.append(scroll);
-		builder.append(new JLabel("<html><div style='width:740px'>" + Messages.getString("UlnlDiff.Help") + "</div></html>")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		builder.append(new JLabel(WrappedText.html(Messages.getString("UlnlDiff.Help"), 740))); //$NON-NLS-1$
 		return builder.getPanel();
 	}
 
