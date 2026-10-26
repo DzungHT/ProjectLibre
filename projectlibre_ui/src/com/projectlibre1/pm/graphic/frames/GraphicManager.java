@@ -144,6 +144,7 @@ import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
+import com.projectlibre1.dialog.EffortRatioDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
 import com.projectlibre1.pm.dependency.autolink.FinishSummary;
@@ -1067,6 +1068,7 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_ESTIMATE_COLUMNS, new EstimateColumnsAction());
 		actionsMap.addHandler(ACTION_SET_ORIGINAL_ESTIMATE, new SetOriginalEstimateAction());
 		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
+		actionsMap.addHandler(ACTION_EFFORT_RATIO, new EffortRatioAction());
 		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
@@ -1713,7 +1715,32 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 	public class EstimateColumnsAction extends ToggleColumnsAction {
 		private static final long serialVersionUID = 1L;
 		public EstimateColumnsAction() {
-			super(new String[] {"Field.originalEstimate", "Field.manDays", "Field.manMonths", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+			super(new String[] {"Field.originalEstimate", "Field.manDays", "Field.manMonths", "Field.effortRatio", "Field.reserveDays", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$
+		}
+	}
+	/**
+	 * Sets the part of the ULNL estimate of each activity planned as work, see EffortRatioDialog, and the work of the
+	 * tasks to it. The rest is kept as reserve
+	 */
+	public class EffortRatioAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			EffortRatioDialog.Result ratios = EffortRatioDialog.doDialog(frame.getProject());
+			if (ratios == null)
+				return;
+			DocumentFrame.EffortRatioResult result = frame.doEffortRatios(ratios.ratios, ratios.includeEdited);
+			if (result.edited > 0 || result.started > 0)
+				Alert.warn(MessageFormat.format(Messages.getString("EffortRatio.Done"), String.valueOf(result.changed), //$NON-NLS-1$
+						String.valueOf(result.edited), String.valueOf(result.started)), getFrameInstance());
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
 		}
 	}
 	public class SetOriginalEstimateAction extends MenuActionsMap.DocumentMenuAction {

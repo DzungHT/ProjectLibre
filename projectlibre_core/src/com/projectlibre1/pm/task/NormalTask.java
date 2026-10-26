@@ -454,7 +454,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 		boolean keepWork = recalculateDuration && defaultAssignment != null
 				&& getSchedulingType() == SchedulingType.FIXED_WORK;
 		long workBefore = keepWork ? getWork(null) : 0;
-		long workBeforeChange = assignment.isInitialized() ? getWork(null) : 0; // for the original estimate
+		long workBeforeChange = assignment.isInitialized() ? getWork(null) : 0; // for the planned estimate
 
 		if (!assignment.isDefault()) {
 			// get rid of any default
@@ -502,7 +502,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			}
 		}
 		if (!assignment.isDefault())
-			restoreOriginalEstimate(workBeforeChange);
+			restorePlannedEstimate(workBeforeChange);
 		setDirty(true);
 		//project.endUndoUpdate();
 
@@ -519,7 +519,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 		// Get details of current assignments before change
 
 		double assignedRate = getRemainingUnits();
-		long workBeforeChange = recalculateDuration ? getWork(null) : 0; // for the original estimate
+		long workBeforeChange = recalculateDuration ? getWork(null) : 0; // for the planned estimate
 		((TaskSnapshot) getCurrentSnapshot()).removeAssignment(assignment);
 
 		if (!assignment.isDefault()) {
@@ -538,7 +538,7 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 				AssignmentService.getInstance().connect(newDefault, null);
 			}
 			if (recalculateDuration)
-				restoreOriginalEstimate(workBeforeChange);
+				restorePlannedEstimate(workBeforeChange);
 		}
 		setDirty(true);
 		//project.endUndoUpdate();
@@ -1818,11 +1818,13 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 
 	/**
 	 * Original estimate: the work estimated in the ULNL (or set by the user), kept apart from the work.
-	 * It is not used by the scheduling. The work goes back to it when assignments are added or removed,
-	 * if it was equal to it before. Millis, 0 if not set. A summary has the total of the tasks below it.
+	 * It is not used by the scheduling. Only a part of it is planned as work, the effort ratio of the activity of
+	 * the task (Project.getEffortRatio()), the rest is kept as reserve. The work goes back to the planned estimate
+	 * when assignments are added or removed, if it was equal to it before. Millis, 0 if not set. A summary has the
+	 * total of the tasks below it.
 	 */
 	private long originalEstimate = 0;
-	/** Below this difference the work is taken as equal to the original estimate (rounding of the units) */
+	/** Below this difference the work is taken as equal to the planned estimate (rounding of the units) */
 	private static final long ESTIMATE_TOLERANCE = 60 * 1000;
 
 	public long getOriginalEstimate() {
@@ -1847,13 +1849,40 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 	public boolean hasOriginalEstimate() {
 		return getOriginalEstimate() > 0;
 	}
-	/** Work minus original estimate, in hours rounded down to 3 decimals. 0 for tasks without original estimate */
+	/** Part of the original estimate planned as work for the activity of this task, 1 if none is set */
+	public double getEffortRatio() {
+		if (isWbsParent()) {
+			long estimate = getOriginalEstimate();
+			return estimate == 0 ? 1 : ((double) getPlannedEstimate()) / estimate;
+		}
+		Project project = getProject();
+		return project == null ? 1 : project.getEffortRatio(activity);
+	}
+	/** Original estimate times the effort ratio: the work planned. Millis. A summary has the total of the tasks below it */
+	public long getPlannedEstimate() {
+		if (!isWbsParent())
+			return Math.round(originalEstimate * getEffortRatio());
+		long total = 0;
+		Collection children = getWbsChildrenNodes();
+		if (children != null)
+			for (Iterator i = children.iterator(); i.hasNext();) {
+				Object impl = ((Node) i.next()).getImpl();
+				if (impl instanceof NormalTask)
+					total += ((NormalTask) impl).getPlannedEstimate();
+			}
+		return total;
+	}
+	/** Reserve: the original estimate not planned as work, in man-days rounded down to 3 decimals */
+	public double getReserveDays() {
+		return roundEffort((getOriginalEstimate() - getPlannedEstimate()) / MILLIS_PER_HOUR / HOURS_PER_MAN_DAY);
+	}
+	/** Work minus planned estimate, in hours rounded down to 3 decimals. 0 for tasks without original estimate */
 	public double getEstimateVariance() {
 		return roundEffort(estimateVarianceHours());
 	}
 	private double estimateVarianceHours() {
 		if (!isWbsParent())
-			return originalEstimate == 0 ? 0 : getWorkHours() - originalEstimate / MILLIS_PER_HOUR;
+			return originalEstimate == 0 ? 0 : getWorkHours() - getPlannedEstimate() / MILLIS_PER_HOUR;
 		double hours = 0;
 		Collection children = getWbsChildrenNodes();
 		if (children != null)
@@ -1864,36 +1893,41 @@ public class NormalTask extends Task implements Allocation, TaskSpecificFields,
 			}
 		return hours;
 	}
-	/** True if the work of this leaf task, given in millis, is its original estimate */
-	public boolean isWorkOriginalEstimate(long work) {
-		return originalEstimate > 0 && Math.abs(Duration.millis(work) - originalEstimate) < ESTIMATE_TOLERANCE;
+	/** True if the work of this leaf task, given in millis, is its planned estimate */
+	public boolean isWorkPlannedEstimate(long work) {
+		return isWorkPlannedEstimate(work, getPlannedEstimate());
+	}
+	/** True if the work of this leaf task, given in millis, is the planned estimate given (millis) */
+	public boolean isWorkPlannedEstimate(long work, long plannedEstimate) {
+		return originalEstimate > 0 && Math.abs(Duration.millis(work) - plannedEstimate) < ESTIMATE_TOLERANCE;
 	}
 	/**
-	 * After a change of assignments: the work goes back to the original estimate if it was equal to it before
+	 * After a change of assignments: the work goes back to the planned estimate if it was equal to it before
 	 * the change, for a task whose work is kept when the assignments change (effort driven) and not started
 	 */
-	private void restoreOriginalEstimate(long workBefore) {
-		if (isEffortDriven() && isWorkOriginalEstimate(workBefore))
-			resetWorkToOriginalEstimate();
+	private void restorePlannedEstimate(long workBefore) {
+		if (isEffortDriven() && isWorkPlannedEstimate(workBefore))
+			resetWorkToPlannedEstimate();
 	}
 	/**
-	 * Sets the work of this leaf task back to its original estimate, if it has one and is not started.
-	 * Returns true if the work was changed
+	 * Sets the work of this leaf task back to its planned estimate, if it has an original estimate and is not
+	 * started. Returns true if the work was changed
 	 */
-	public boolean resetWorkToOriginalEstimate() {
+	public boolean resetWorkToPlannedEstimate() {
 		if (isWbsParent() || originalEstimate == 0 || cancelled || getActualWork(null) != 0)
 			return false;
+		long planned = getPlannedEstimate();
 		long work = Duration.millis(getWork(null));
-		if (isWorkOriginalEstimate(work))
+		if (isWorkPlannedEstimate(work, planned))
 			return false;
 		if (work == 0) {
-			setWork(originalEstimate);
+			setWork(planned);
 			return true;
 		}
 		// the duration of each assignment is scaled, keeping its units, as setWork() does for fixed work. But
 		// setWork() does not change the assignments ending before the task, like the default assignment created
 		// when the last resource is removed, as the task is not rescheduled yet
-		double multiplier = ((double) originalEstimate) / work;
+		double multiplier = ((double) planned) / work;
 		for (Iterator i = getAssignments().iterator(); i.hasNext();) {
 			Assignment assignment = (Assignment) i.next();
 			assignment.adjustRemainingDuration((long) (assignment.getRemainingDuration() * multiplier), false);

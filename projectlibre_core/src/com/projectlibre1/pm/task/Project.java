@@ -236,6 +236,53 @@ public class Project implements Document, BelongsToDocument, HasKey, HasPriority
 		this.resourcePlanSettings = resourcePlanSettings;
 	}
 
+	/**
+	 * Part of the original estimate planned as work, by activity of the ULNL (GP, PT, KT...): the rest is kept as
+	 * reserve, see NormalTask.getPlannedEstimate(). Written "GP=0.5;PT=0.8". Null if never set: all is planned
+	 */
+	private String effortRatios = null;
+	private transient Map<String, Double> effortRatioMap = null;
+
+	/** Ratio of the original estimate planned for the tasks of an activity, 1 if not set */
+	public double getEffortRatio(String activity) {
+		if (activity == null)
+			return 1;
+		Double ratio = getEffortRatios().get(activity.toUpperCase());
+		return ratio == null ? 1 : ratio;
+	}
+	/** Ratios set, by activity in upper case. Not to be modified */
+	public Map<String, Double> getEffortRatios() {
+		if (effortRatioMap == null) {
+			effortRatioMap = new TreeMap<String, Double>();
+			if (effortRatios != null)
+				for (String entry : effortRatios.split(";")) { //$NON-NLS-1$
+					int equal = entry.indexOf('=');
+					if (equal <= 0)
+						continue;
+					try {
+						double ratio = Double.parseDouble(entry.substring(equal + 1));
+						if (ratio > 0)
+							effortRatioMap.put(entry.substring(0, equal).trim().toUpperCase(), ratio);
+					} catch (NumberFormatException e) {
+					}
+				}
+		}
+		return effortRatioMap;
+	}
+	/** Sets the ratios by activity. The work of the tasks is not changed */
+	public void setEffortRatios(Map<String, Double> ratios) {
+		StringBuilder text = new StringBuilder();
+		for (Map.Entry<String, Double> entry : ratios.entrySet()) {
+			if (entry.getValue() == null || entry.getValue() <= 0)
+				continue;
+			if (text.length() > 0)
+				text.append(';');
+			text.append(entry.getKey().toUpperCase()).append('=').append(entry.getValue());
+		}
+		effortRatios = text.length() == 0 ? null : text.toString();
+		effortRatioMap = null;
+	}
+
 	/** Versions of the Resource Plan saved before being applied, see ResourcePlanVersions. Null if never saved */
 	private String resourcePlanVersions = null;
 

@@ -303,6 +303,9 @@
 			<field property="manMonths" id="Field.manMonths" readOnly="true" sum="This" />
 			<!-- original estimate from the ULNL, not used by the scheduling. Summaries compute their own value from the leaf tasks -->
 			<field property="originalEstimate" id="Field.originalEstimate" duration="true" work="true" sum="This" />
+			<!-- part of the original estimate planned as work (effort ratio of the activity) and the rest, kept as reserve, in MD -->
+			<field property="effortRatio" id="Field.effortRatio" percent="true" readOnly="true" sum="This" />
+			<field property="reserveDays" id="Field.reserveDays" readOnly="true" sum="This" />
 			<field property="estimateVariance" id="Field.estimateVariance" readOnly="true" sum="This" />
 			<!-- information from the ULNL, used to link the tasks and to import a new version of the ULNL -->
 			<field property="ulnlKey" id="Field.ulnlKey" readOnly="true" />

@@ -85,7 +85,7 @@ import com.projectlibre1.pm.task.Project;
  * <p>
  * Changes, each can be applied or not:
  * <ul>
- * <li>ESTIMATE: the estimate of an activity changed and its work is still its original estimate: both are updated</li>
+ * <li>ESTIMATE: the estimate of an activity changed and its work is still its planned estimate: both are updated</li>
  * <li>CONFLICT: the estimate changed but the work was changed by the user: the original estimate is always
  * updated, the work only if the change is applied</li>
  * <li>RENAME, FUNCTION: name, or function code and lane of a row, changed</li>
@@ -328,7 +328,7 @@ public class UlnlWbsDiff {
 						changed = true;
 					}
 				} else if (Math.abs(task.getOriginalEstimate() - estimate) >= ESTIMATE_TOLERANCE) {
-					boolean conflict = !task.isCancelled() && !task.isWorkOriginalEstimate(work);
+					boolean conflict = !task.isCancelled() && !task.isWorkPlannedEstimate(work);
 					changes.add(new Change(conflict ? CONFLICT : ESTIMATE, task, item, !conflict));
 					changed = true;
 				}
