@@ -74,6 +74,8 @@ import com.projectlibre1.datatype.Duration;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.dependency.DependencyType;
+import com.projectlibre1.pm.resource.Resource;
+import com.projectlibre1.pm.scheduling.ConstraintType;
 import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.pm.task.Task;
@@ -83,6 +85,7 @@ import com.projectlibre1.pm.task.Task;
  * whole project or below some tasks. The links Auto Link created before between these tasks are removed, unless
  * they are created again. A link is not created if the same link already exists.
  * Before applying, the plan is checked for circular links, which can come from links made by hand.
+ * The plan also sets the first day of the people arriving late as constraints, and removes the leveling delays.
  */
 public class AutoLinkPlan {
 	/** A link to create, finish to start */
@@ -107,6 +110,13 @@ public class AutoLinkPlan {
 	private int existing = 0; // links made by hand that Auto Link would create
 	private int tasks = 0; // linked tasks
 	private List<Task> circularTasks = Collections.emptyList();
+	// the sequences
+	private final Map<NormalTask, Long> constraints = new LinkedHashMap<NormalTask, Long>(); // first day of a person, 0 to remove
+	private final List<NormalTask> delayed = new ArrayList<NormalTask>(); // tasks with leveling delays to remove
+	private int people = 0; // people with tasks linked
+	private int unassigned = 0; // tasks linked without people
+	private int userConstraints = 0; // first tasks of people keeping a constraint of the user
+	private long estimatedFinish = 0;
 
 	/**
 	 * @param roots the tasks below which (included) tasks are linked, null for the whole project
@@ -140,8 +150,10 @@ public class AutoLinkPlan {
 		Map<NormalTask, Set<NormalTask>> wanted = new LinkedHashMap<NormalTask, Set<NormalTask>>();
 		if (options.isLinkActivities())
 			linkActivities(linked, options, wanted);
+		Map<NormalTask, Long> firstDays = new IdentityHashMap<NormalTask, Long>();
 		if (options.isLinkSequences())
-			linkSequences(linked, options, wanted);
+			linkSequences(project, linked, options, wanted, firstDays);
+		changeTasks(project, scope, firstDays);
 
 		// existing links between the tasks of the scope
 		for (NormalTask successor : scope) {
@@ -202,27 +214,113 @@ public class AutoLinkPlan {
 		}
 	}
 
-	/** Tasks of an activity one after the other: by resource for the assigned ones, else by activity or lane */
-	private static void linkSequences(List<NormalTask> linked, AutoLinkOptions options, Map<NormalTask, Set<NormalTask>> wanted) {
-		Map<List<Object>, NormalTask> last = new HashMap<List<Object>, NormalTask>();
+	/**
+	 * The tasks of each sequence one after the other, in the order of PersonSequencer: of each person, and of each
+	 * activity or lane for the tasks not assigned if wanted. Also the first day of the people arriving late
+	 */
+	private void linkSequences(Project project, List<NormalTask> linked, AutoLinkOptions options, Map<NormalTask, Set<NormalTask>> wanted,
+			Map<NormalTask, Long> firstDays) {
+		// the logic: links of the activities wanted, and links made by hand to the tasks linked or their summaries,
+		// from tasks linked or from summaries (from each task linked below them)
+		Set<NormalTask> linkedSet = identitySet(linked);
+		Map<NormalTask, Set<NormalTask>> logic = new IdentityHashMap<NormalTask, Set<NormalTask>>();
+		for (Map.Entry<NormalTask, Set<NormalTask>> entry : wanted.entrySet())
+			logic.put(entry.getKey(), new LinkedHashSet<NormalTask>(entry.getValue()));
+		Map<Task, List<NormalTask>> below = new IdentityHashMap<Task, List<NormalTask>>(); // tasks linked below a summary
+		for (NormalTask task : linked)
+			for (Task parent = task.getWbsParentTask(); parent != null; parent = parent.getWbsParentTask()) {
+				List<NormalTask> list = below.get(parent);
+				if (list == null) {
+					list = new ArrayList<NormalTask>();
+					below.put(parent, list);
+				}
+				list.add(task);
+			}
+		for (NormalTask task : linked)
+			for (Task t = task; t != null; t = t.getWbsParentTask())
+				for (Iterator i = t.getPredecessorList().iterator(); i.hasNext();) {
+					Dependency dependency = (Dependency) i.next();
+					Object predecessor = dependency.getPredecessor();
+					if (dependency.isAuto() || dependency.isDisabled())
+						continue;
+					if (linkedSet.contains(predecessor))
+						want((NormalTask) predecessor, task, logic);
+					else if (below.containsKey(predecessor) && !below.get(predecessor).contains(task))
+						for (NormalTask before : below.get(predecessor))
+							want(before, task, logic);
+				}
+
+		Map<NormalTask, List<Object>> sequences = new IdentityHashMap<NormalTask, List<Object>>();
 		for (NormalTask task : linked) {
-			for (List<Object> key : sequenceKeys(task, options)) {
-				NormalTask previous = last.put(key, task);
-				if (previous != null)
-					want(previous, task, wanted);
+			List<Object> keys = sequenceKeys(task, options);
+			if (keys.isEmpty() || !(keys.get(0) instanceof Resource))
+				unassigned++;
+			sequences.put(task, keys);
+		}
+		PersonSequencer sequencer = new PersonSequencer(project, linked, logic, sequences, options.isReadyOrder());
+		estimatedFinish = sequencer.getFinish();
+		for (Map.Entry<Object, List<NormalTask>> entry : sequencer.getOrders().entrySet()) {
+			List<NormalTask> order = entry.getValue();
+			for (int i = 1; i < order.size(); i++)
+				want(order.get(i - 1), order.get(i), wanted);
+			if (!(entry.getKey() instanceof Resource))
+				continue;
+			people++;
+			long from = sequencer.getAvailableFrom(entry.getKey());
+			NormalTask first = order.get(0);
+			if (options.isJoinConstraints() && from > project.getStartConstraint() && first.getActualStart() == 0) {
+				Long day = firstDays.get(first);
+				firstDays.put(first, day == null ? from : Math.max(day, from));
 			}
 		}
 	}
 
-	private static List<List<Object>> sequenceKeys(NormalTask task, AutoLinkOptions options) {
-		String activity = options.getActivities()[options.activityIndex(task)];
-		List<List<Object>> keys = new ArrayList<List<Object>>();
+	/**
+	 * The constraints of the first day of the people are set, moved or removed (the ones of the user are kept), and
+	 * the leveling delays removed: the dates come from the links
+	 */
+	private void changeTasks(Project project, Set<NormalTask> scope, Map<NormalTask, Long> firstDays) {
+		for (Iterator i = project.getTaskOutlineIterator(); i.hasNext();) {
+			Object impl = i.next();
+			if (!(impl instanceof NormalTask) || !scope.contains(impl))
+				continue;
+			NormalTask task = (NormalTask) impl;
+			if (hasLevelingDelay(task))
+				delayed.add(task);
+			Long day = firstDays.get(task);
+			boolean ours = task.isJoinConstraint();
+			if (day != null) {
+				long date = task.getEffectiveWorkCalendar().adjustInsideCalendar(day, false);
+				if (ours && task.getConstraintType() == ConstraintType.SNET && task.getConstraintDate() == date)
+					continue;
+				if (ours || task.getConstraintType() == ConstraintType.ASAP)
+					constraints.put(task, date);
+				else
+					userConstraints++;
+			} else if (ours)
+				constraints.put(task, 0L);
+		}
+	}
+
+	private static boolean hasLevelingDelay(NormalTask task) {
+		if (Duration.millis(task.getLevelingDelay()) != 0)
+			return true;
+		for (Iterator i = task.getAssignments().iterator(); i.hasNext();)
+			if (Duration.millis(((Assignment) i.next()).getLevelingDelay()) != 0)
+				return true;
+		return false;
+	}
+
+	/** Sequences of a task: its people, else its activity and lane if the tasks not assigned are linked, else none */
+	private static List<Object> sequenceKeys(NormalTask task, AutoLinkOptions options) {
+		List<Object> keys = new ArrayList<Object>();
 		for (Iterator i = task.getAssignments().iterator(); i.hasNext();) {
 			Assignment assignment = (Assignment) i.next();
-			if (!assignment.isDefault() && assignment.isLabor())
-				keys.add(Arrays.<Object> asList(activity, "resource", assignment.getResource())); //$NON-NLS-1$
+			if (!assignment.isDefault() && assignment.isLabor() && !keys.contains(assignment.getResource()))
+				keys.add(assignment.getResource());
 		}
-		if (keys.isEmpty()) {
+		if (keys.isEmpty() && options.isLinkUnassigned()) {
+			String activity = options.getActivities()[options.activityIndex(task)];
 			String lane = options.isLaneActivity(activity) ? task.getLane() : null;
 			keys.add(Arrays.<Object> asList(activity, "lane", lane)); //$NON-NLS-1$
 		}
@@ -371,7 +469,31 @@ public class AutoLinkPlan {
 	public List<Task> getCircularTasks() {
 		return circularTasks;
 	}
+	/** Sequences: tasks whose constraint becomes Start No Earlier Than the first day of their person, or is removed (0) */
+	public Map<NormalTask, Long> getConstraints() {
+		return constraints;
+	}
+	/** Sequences: tasks whose leveling delays (of the task and of its assignments) are removed */
+	public List<NormalTask> getDelayed() {
+		return delayed;
+	}
+	/** Sequences: number of people whose tasks are linked */
+	public int getPeopleCount() {
+		return people;
+	}
+	/** Sequences: tasks linked without people, so without a sequence */
+	public int getUnassignedCount() {
+		return unassigned;
+	}
+	/** Sequences: first tasks of a person arriving late which keep a constraint set by the user */
+	public int getUserConstraintCount() {
+		return userConstraints;
+	}
+	/** Sequences: end of the tasks linked in the simulation of PersonSequencer, an estimate. 0 if none */
+	public long getEstimatedFinish() {
+		return estimatedFinish;
+	}
 	public boolean isEmpty() {
-		return toCreate.isEmpty() && toRemove.isEmpty();
+		return toCreate.isEmpty() && toRemove.isEmpty() && constraints.isEmpty() && delayed.isEmpty();
 	}
 }

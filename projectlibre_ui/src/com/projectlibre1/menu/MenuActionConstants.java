@@ -149,12 +149,15 @@ public interface MenuActionConstants {
 	public static final String ACTION_ESTIMATE_COLUMNS       = "EstimateColumns";
 	public static final String ACTION_SET_ORIGINAL_ESTIMATE  = "SetOriginalEstimate";
 	public static final String ACTION_RESET_WORK_TO_ESTIMATE = "ResetWorkToEstimate";
+	public static final String ACTION_EFFORT_RATIO           = "EffortRatio";
 	public static final String ACTION_CANCEL_TASK            = "CancelTask";
 	public static final String ACTION_UNCANCEL_TASK          = "UncancelTask";
 	public static final String ACTION_AUTO_LINK              = "AutoLink";
 	public static final String ACTION_VALIDATE_LINKS         = "ValidateLinks";
+	public static final String ACTION_RESCHEDULE             = "Reschedule";
 	public static final String ACTION_RESOURCE_PLAN         = "ResourcePlan";
 	public static final String ACTION_ASSIGNMENT_BOARD      = "AssignmentBoard";
+	public static final String ACTION_ASSIGN_VIEW          = "AssignView";
 	public static final String ACTION_LABOR_CATALOG          = "LaborCatalog";
 	public static final String ACTION_SKILL_CATALOG          = "SkillCatalog";
 	public static final String ACTION_LABOR_COLUMNS          = "LaborColumns";

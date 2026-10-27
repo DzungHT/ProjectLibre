@@ -186,7 +186,7 @@ public class UlnlWbsUpdater {
 		case SETTING_WORK:
 			for (int n = 0; n < CHANGES_PER_STEP && done < newActivities.size(); n++) {
 				NormalTask task = newActivities.get(done++);
-				task.setWork(task.getOriginalEstimate());
+				task.setWork(task.getPlannedEstimate());
 				task.markTaskAsNeedingRecalculation();
 			}
 			if (done == newActivities.size()) {
@@ -228,7 +228,7 @@ public class UlnlWbsUpdater {
 			setField(estimateField, task, new Work(change.getNewEstimate()));
 			if (change.isApply() && !task.isCancelled()) {
 				Object oldWork = workField.getValue(task, null);
-				if (task.resetWorkToOriginalEstimate()) {
+				if (task.resetWorkToPlannedEstimate()) {
 					task.markTaskAsNeedingRecalculation();
 					workField.fireEvent(task, eventSource, null);
 					if (undo != null)

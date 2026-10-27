@@ -69,9 +69,11 @@ import com.projectlibre1.pm.task.NormalTask;
  * <li>Activities: each task of an activity is linked after the tasks of the previous activity found in the same
  * group, a row (the parent of the task) or a function (the parent of the row), chosen for each pair of activities.
  * When there is none, the activity before is used, and so on</li>
- * <li>Sequences: the tasks of an activity are linked one after the other in the order of the WBS. Assigned tasks
- * make one sequence per resource. The other ones make one sequence per activity, or per activity and lane for
- * the lane activities (the development tasks of BE, FE, Mobile...)</li>
+ * <li>Sequences (docs/relink-design.md): the tasks of each person are linked one after the other, whatever their
+ * activity, in the order they can start or in the order of the WBS. The tasks not assigned make one sequence per
+ * activity, or per activity and lane for the lane activities (the development tasks of BE, FE, Mobile...), or
+ * none. The first task of a person arriving late starts no earlier than the person, and the leveling delays are
+ * removed: the dates come from the links</li>
  * </ul>
  * Cancelled tasks and tasks without work are skipped: the tasks around them are linked together.
  * The activity of a task is its activity code, or found from its name, see activityIndex().
@@ -86,6 +88,9 @@ public class AutoLinkOptions {
 	private final Set<String> laneActivities;
 	private boolean linkActivities = true;
 	private boolean linkSequences = true;
+	private boolean linkUnassigned = false;
+	private boolean readyOrder = true;
+	private boolean joinConstraints = true;
 	private String[] normalizedNames = null;
 
 	public AutoLinkOptions(String[] activities, int[] scopes, String[] laneActivities) {
@@ -149,5 +154,26 @@ public class AutoLinkOptions {
 	}
 	public void setLinkSequences(boolean linkSequences) {
 		this.linkSequences = linkSequences;
+	}
+	/** Sequences of the tasks not assigned: by activity and lane (true), or none */
+	public boolean isLinkUnassigned() {
+		return linkUnassigned;
+	}
+	public void setLinkUnassigned(boolean linkUnassigned) {
+		this.linkUnassigned = linkUnassigned;
+	}
+	/** Sequences: the tasks in the order they can start (true), or in the order of the WBS */
+	public boolean isReadyOrder() {
+		return readyOrder;
+	}
+	public void setReadyOrder(boolean readyOrder) {
+		this.readyOrder = readyOrder;
+	}
+	/** Sequences: the first task of a person starts no earlier than the day the person is available */
+	public boolean isJoinConstraints() {
+		return joinConstraints;
+	}
+	public void setJoinConstraints(boolean joinConstraints) {
+		this.joinConstraints = joinConstraints;
 	}
 }

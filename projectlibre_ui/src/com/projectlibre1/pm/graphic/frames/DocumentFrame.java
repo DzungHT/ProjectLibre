@@ -67,8 +67,13 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
+import javax.swing.undo.AbstractUndoableEdit;
+import javax.swing.undo.CannotRedoException;
+import javax.swing.undo.CannotUndoException;
 import javax.swing.undo.UndoableEditSupport;
 
 import javax.swing.JRadioButtonMenuItem;
@@ -101,6 +106,7 @@ import com.projectlibre1.pm.graphic.spreadsheet.selection.event.SelectionNodeLis
 import com.projectlibre1.pm.graphic.timescale.CoordinatesConverter;
 import com.projectlibre1.pm.graphic.views.BaseView;
 import com.projectlibre1.pm.graphic.views.ChartView;
+import com.projectlibre1.pm.graphic.views.AssignView;
 import com.projectlibre1.pm.graphic.views.GanttView;
 import com.projectlibre1.pm.graphic.views.MainView;
 import com.projectlibre1.pm.graphic.views.PertView;
@@ -116,6 +122,8 @@ import com.projectlibre1.configuration.Configuration;
 import com.projectlibre1.document.ObjectEvent;
 import com.projectlibre1.document.ObjectSelectionEvent;
 import com.projectlibre1.document.ObjectSelectionListener;
+import com.projectlibre1.datatype.Duration;
+import com.projectlibre1.datatype.Work;
 import com.projectlibre1.field.Field;
 import com.projectlibre1.configuration.FieldDictionary;
 import com.projectlibre1.field.FieldParseException;
@@ -175,6 +183,7 @@ public class DocumentFrame extends NamedFrame implements
 	protected UsageDetailView taskUsageView;
 	protected UsageDetailView resourceUsageView;
 	protected BaseView reportView;
+	protected AssignView assignView;
 	private static ArrayList ganttColumns = null; // static is ok?
 	private FindDialog findDialog = null;
 	protected CoordinatesConverter coord;
@@ -501,9 +510,11 @@ public class DocumentFrame extends NamedFrame implements
 	}
 
 	/**
-	 * For the selected tasks and the tasks below the selected summaries: sets the original estimate to the work
-	 * (fromWork true), or the work back to the original estimate. Tasks that are started are not changed by a reset.
-	 * The schedule is calculated once at the end and a single undo reverts all. Returns the number of tasks changed
+	 * For the selected tasks and the tasks below the selected summaries: sets the original estimate from the work
+	 * (fromWork true), or the work back to the planned estimate. With an effort ratio the original estimate is the
+	 * work divided by the ratio, so that the work stays the planned estimate. Tasks that are started are not changed
+	 * by a reset. The schedule is calculated once at the end and a single undo reverts all. Returns the number of
+	 * tasks changed
 	 */
 	public int doOriginalEstimate(final boolean fromWork) {
 		finishAnyOperations();
@@ -527,21 +538,17 @@ public class DocumentFrame extends NamedFrame implements
 				Object oldValue = to.getValue(task, null);
 				Object value;
 				if (fromWork) {
-					if (task.isCancelled() || task.isWorkOriginalEstimate(task.getWork(null))) // a cancelled task has no work
+					if (task.isCancelled() || task.isWorkPlannedEstimate(task.getWork(null))) // a cancelled task has no work
 						return false;
-					value = from.getValue(task, null);
+					double ratio = task.getEffortRatio();
+					value = ratio == 1 ? from.getValue(task, null) : new Work(Math.round(Duration.millis(task.getWork(null)) / ratio));
 					try {
 						to.setValue(task, DocumentFrame.this, value, null);
 					} catch (FieldParseException e) {
 						return false;
 					}
-				} else {
-					if (task.isReadOnlyWork(null) || !task.resetWorkToOriginalEstimate())
-						return false;
-					task.markTaskAsNeedingRecalculation();
-					to.fireEvent(task, DocumentFrame.this, null);
-					value = to.getValue(task, null);
-				}
+				} else
+					return resetWork(task, to, undo);
 				if (undo != null)
 					undo.postEdit(new FieldEdit(to, task, value, oldValue, DocumentFrame.this, null));
 				return true;
@@ -549,6 +556,104 @@ public class DocumentFrame extends NamedFrame implements
 		};
 		runBatch(Messages.getString("BusyOperation.OriginalEstimate"), tasks.size(), step); //$NON-NLS-1$
 		return step.changed;
+	}
+	/** Sets the work of a task back to its planned estimate, with its undo. Returns false if not changed */
+	private boolean resetWork(NormalTask task, Field workField, UndoableEditSupport undo) {
+		Object oldValue = workField.getValue(task, null);
+		if (task.isReadOnlyWork(null) || !task.resetWorkToPlannedEstimate())
+			return false;
+		task.markTaskAsNeedingRecalculation();
+		workField.fireEvent(task, DocumentFrame.this, null);
+		if (undo != null)
+			undo.postEdit(new FieldEdit(workField, task, workField.getValue(task, null), oldValue, DocumentFrame.this, null));
+		return true;
+	}
+
+	/** Result of doEffortRatios(): numbers of tasks */
+	public static class EffortRatioResult {
+		/** Work set to the new planned estimate */
+		public int changed = 0;
+		/** Work changed by hand, kept */
+		public int edited = 0;
+		/** Started, kept */
+		public int started = 0;
+	}
+	/**
+	 * Sets the effort ratios of the project, by activity (see Project.getEffortRatio()), and the work of the tasks of
+	 * the activities whose ratio changed to their new planned estimate. The tasks whose work is not their planned
+	 * estimate (changed by hand) are kept unless includeEdited. Started and cancelled tasks are kept. The schedule is
+	 * calculated once at the end and a single undo reverts all, the ratios included
+	 */
+	public EffortRatioResult doEffortRatios(Map<String, Double> ratios, boolean includeEdited) {
+		finishAnyOperations();
+		final Project project = getProject();
+		final EffortRatioResult result = new EffortRatioResult();
+		final Map<String, Double> oldRatios = new TreeMap<String, Double>(project.getEffortRatios());
+		final Map<String, Double> newRatios = new TreeMap<String, Double>();
+		for (Map.Entry<String, Double> entry : ratios.entrySet())
+			if (entry.getValue() != null && Math.abs(entry.getValue() - 1) > 1e-9) // 100% is the default
+				newRatios.put(entry.getKey().toUpperCase(), entry.getValue());
+		if (newRatios.equals(oldRatios))
+			return result;
+		// the tasks are chosen with the old ratios: their work is compared to their old planned estimate
+		List<NormalTask> tasks = new ArrayList<NormalTask>();
+		for (Iterator i = project.getTaskOutlineIterator(); i.hasNext();) {
+			Object impl = i.next();
+			if (!(impl instanceof NormalTask))
+				continue;
+			NormalTask task = (NormalTask) impl;
+			if (task.isWbsParent() || task.isCancelled() || !task.hasOriginalEstimate() || task.getActivity() == null)
+				continue;
+			String activity = task.getActivity().toUpperCase();
+			double newRatio = newRatios.containsKey(activity) ? newRatios.get(activity) : 1;
+			if (Math.abs(project.getEffortRatio(activity) - newRatio) < 1e-9)
+				continue;
+			if (task.getActualWork(null) != 0)
+				result.started++;
+			else if (includeEdited || task.isWorkPlannedEstimate(task.getWork(null)))
+				tasks.add(task);
+			else
+				result.edited++;
+		}
+		final Field workField = FieldDictionary.getInstance().getFieldFromId("Field.work"); //$NON-NLS-1$
+		final UndoableEditSupport undo = project.getUndoController() == null ? null : project.getUndoController().getEditSupport();
+		TaskBatchStep step = new TaskBatchStep(tasks, Messages.getString("EffortRatio.Applying")) { //$NON-NLS-1$
+			void begin() {
+				project.setEffortRatios(newRatios);
+				project.setGroupDirty(true);
+				if (undo != null)
+					undo.postEdit(new EffortRatioEdit(project, oldRatios, newRatios));
+			}
+			boolean change(NormalTask task) {
+				return resetWork(task, workField, undo);
+			}
+		};
+		runBatch(Messages.getString("EffortRatio.Title"), tasks.size(), step); //$NON-NLS-1$
+		result.changed = step.changed;
+		return result;
+	}
+	/** Undo of the effort ratios of a project. The work of the tasks has its own undo */
+	private static class EffortRatioEdit extends AbstractUndoableEdit {
+		private static final long serialVersionUID = 1L;
+		private final Project project;
+		private final Map<String, Double> oldRatios, newRatios;
+
+		EffortRatioEdit(Project project, Map<String, Double> oldRatios, Map<String, Double> newRatios) {
+			this.project = project;
+			this.oldRatios = oldRatios;
+			this.newRatios = newRatios;
+		}
+		public void undo() throws CannotUndoException {
+			super.undo();
+			project.setEffortRatios(oldRatios);
+		}
+		public void redo() throws CannotRedoException {
+			super.redo();
+			project.setEffortRatios(newRatios);
+		}
+		public String getPresentationName() {
+			return Messages.getString("EffortRatio.Title"); //$NON-NLS-1$
+		}
 	}
 	/**
 	 * Cancels the selected tasks (and the tasks below the selected summaries), or un-cancels them, see TaskCancellation.
@@ -698,6 +803,9 @@ public class DocumentFrame extends NamedFrame implements
 		}
 		/** Returns true if the task was changed */
 		abstract boolean change(NormalTask task);
+		/** Called once in the transaction, before the first task */
+		void begin() {
+		}
 
 		public boolean next(BusyOperationDialog dialog) {
 			if (!started) {
@@ -706,6 +814,7 @@ public class DocumentFrame extends NamedFrame implements
 					dialog.setCancelable(false);
 				getProject().beginUndoUpdate();
 				transactionId = getProject().fireMultipleTransaction(0, true);
+				begin();
 			}
 			if (tasks.hasNext()) {
 				if (change(tasks.next()))
@@ -990,6 +1099,13 @@ public class DocumentFrame extends NamedFrame implements
 		return resourceUsageView;
 	}
 
+	/** The people below the Gantt, to give them the tasks selected in it */
+	public AssignView getAssignView() {
+		if (assignView == null)
+			assignView = new AssignView(this);
+		return assignView;
+	}
+
 	public void toggleMinWidth() {
 		boolean normalMinWidth = (activeTopView == null || activeTopView.hasNormalMinWidth())
 			&& (activeBottomView == null || activeBottomView.hasNormalMinWidth());
@@ -1035,6 +1151,8 @@ public class DocumentFrame extends NamedFrame implements
 			bottomView = getTaskUsageView();
 		else if (viewName.equals(ACTION_RESOURCE_USAGE))
 			bottomView = getResourceUsageView();
+		else if (viewName.equals(ACTION_ASSIGN_VIEW))
+			bottomView = getAssignView();
 		else if (viewName.equals(ACTION_NO_SUB_WINDOW))
 			deactivateBottomView();
 
@@ -1458,6 +1576,7 @@ public class DocumentFrame extends NamedFrame implements
 		taskUsageView = null;
 		resourceUsageView = null;
 		reportView = null;
+		assignView = null;
 		activeTopView = null;
 		activeBottomView = null;
 	}
@@ -1475,7 +1594,8 @@ public class DocumentFrame extends NamedFrame implements
 			projectView,
 			taskUsageView,
 			resourceUsageView,
-			reportView
+			reportView,
+			assignView
 		};
 		ArrayUtils.forAllDo(views,c);
 	}

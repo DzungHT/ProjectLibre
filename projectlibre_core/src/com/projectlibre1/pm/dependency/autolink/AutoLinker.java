@@ -55,9 +55,24 @@
  *******************************************************************************/
 package com.projectlibre1.pm.dependency.autolink;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
+import javax.swing.undo.AbstractUndoableEdit;
+import javax.swing.undo.CannotRedoException;
+import javax.swing.undo.CannotUndoException;
+
+import com.projectlibre1.configuration.Configuration;
+import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.dependency.Dependency;
 import com.projectlibre1.pm.dependency.DependencyService;
 import com.projectlibre1.pm.dependency.DependencyType;
+import com.projectlibre1.pm.scheduling.ConstraintType;
+import com.projectlibre1.pm.task.NormalTask;
 import com.projectlibre1.pm.task.Project;
 
 /**
@@ -122,6 +137,7 @@ public class AutoLinker {
 				DependencyService.getInstance().connect(dependency, eventSource);
 			}
 			if (done == plan.getToCreate().size()) {
+				changeTasks();
 				phase = RECALCULATING;
 				done = 0;
 			}
@@ -132,6 +148,106 @@ public class AutoLinker {
 			return true;
 		default:
 			return true;
+		}
+	}
+
+	/** Sequences: the constraints of the first day of the people and the leveling delays, undone with the links */
+	private void changeTasks() {
+		if (plan.getConstraints().isEmpty() && plan.getDelayed().isEmpty())
+			return;
+		TaskEdit edit = new TaskEdit(plan);
+		edit.redo();
+		project.getUndoController().getEditSupport().postEdit(edit);
+	}
+
+	/** State of a task changed by Auto Link: its constraint, and the leveling delays of the task and its assignments */
+	private static class TaskState {
+		int type;
+		long date;
+		boolean joinConstraint;
+		long delay;
+		long[] assignmentDelays;
+
+		TaskState(NormalTask task, List<Assignment> assignments) {
+			type = task.getConstraintType();
+			date = task.getConstraintDate();
+			joinConstraint = task.isJoinConstraint();
+			delay = task.getLevelingDelay();
+			assignmentDelays = new long[assignments.size()];
+			for (int i = 0; i < assignmentDelays.length; i++)
+				assignmentDelays[i] = assignments.get(i).getLevelingDelay();
+		}
+		TaskState(TaskState from) {
+			type = from.type;
+			date = from.date;
+			joinConstraint = from.joinConstraint;
+			delay = from.delay;
+			assignmentDelays = from.assignmentDelays.clone();
+		}
+	}
+
+	private static class TaskEdit extends AbstractUndoableEdit {
+		private static final long serialVersionUID = 1L;
+		private final List<NormalTask> tasks = new ArrayList<NormalTask>();
+		private final List<List<Assignment>> assignments = new ArrayList<List<Assignment>>();
+		private final List<TaskState> before = new ArrayList<TaskState>();
+		private final List<TaskState> after = new ArrayList<TaskState>();
+
+		TaskEdit(AutoLinkPlan plan) {
+			Map<NormalTask, TaskState> changes = new IdentityHashMap<NormalTask, TaskState>();
+			for (Map.Entry<NormalTask, Long> entry : plan.getConstraints().entrySet()) {
+				NormalTask task = entry.getKey();
+				TaskState state = change(task, changes);
+				long date = entry.getValue();
+				state.type = date == 0 ? ConstraintType.ASAP : ConstraintType.SNET;
+				state.date = date;
+				state.joinConstraint = date != 0;
+			}
+			for (NormalTask task : plan.getDelayed()) {
+				TaskState state = change(task, changes);
+				state.delay = 0;
+				Arrays.fill(state.assignmentDelays, 0);
+			}
+		}
+		private TaskState change(NormalTask task, Map<NormalTask, TaskState> changes) {
+			TaskState state = changes.get(task);
+			if (state == null) {
+				List<Assignment> list = new ArrayList<Assignment>();
+				for (Iterator i = task.getAssignments().iterator(); i.hasNext();)
+					list.add((Assignment) i.next());
+				TaskState old = new TaskState(task, list);
+				state = new TaskState(old);
+				tasks.add(task);
+				assignments.add(list);
+				before.add(old);
+				after.add(state);
+				changes.put(task, state);
+			}
+			return state;
+		}
+		public void undo() throws CannotUndoException {
+			super.undo();
+			set(before);
+		}
+		public void redo() throws CannotRedoException {
+			if (canRedo())
+				super.redo();
+			set(after);
+		}
+		private void set(List<TaskState> states) {
+			for (int t = 0; t < tasks.size(); t++) {
+				NormalTask task = tasks.get(t);
+				TaskState state = states.get(t);
+				task.setScheduleConstraint(state.type, state.date);
+				task.setJoinConstraint(state.joinConstraint);
+				task.setLevelingDelay(state.delay);
+				List<Assignment> list = assignments.get(t);
+				for (int i = 0; i < list.size(); i++)
+					list.get(i).setLevelingDelay(state.assignmentDelays[i]);
+				task.setDirty(true);
+				task.getDocument().getObjectEventManager().fireUpdateEvent(task, task, Configuration.getFieldFromId("Field.constraintType")); //$NON-NLS-1$
+				task.getDocument().getObjectEventManager().fireUpdateEvent(task, task, Configuration.getFieldFromId("Field.levelingDelay")); //$NON-NLS-1$
+			}
 		}
 	}
 

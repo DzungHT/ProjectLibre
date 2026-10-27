@@ -657,7 +657,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		verdictScroll.setPreferredSize(new Dimension(900, 110));
 		verdictScroll.setBorder(null);
 
-		FormLayout layout = new FormLayout("600dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		FormLayout layout = new FormLayout(WrappedText.column(HELP_WIDTH), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		builder.append(versionBar());
@@ -723,8 +723,9 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	}
 
 	private static JLabel help(String key) {
-		return new JLabel("<html><div style='width:600px'>" + Messages.getString(key) + "</div></html>"); //$NON-NLS-1$ //$NON-NLS-2$
+		return new JLabel(WrappedText.html(Messages.getString(key), HELP_WIDTH));
 	}
+	private static final int HELP_WIDTH = 600; // pixels, the long texts wrap
 
 	private static JPanel buttons(JButton... buttons) {
 		JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
@@ -1379,10 +1380,12 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		}
 	}
 
+	/** Backgrounds of the cells that cannot be changed and of the rows of totals, also used by EffortRatioDialog */
+	static final Color READ_ONLY = new Color(242, 242, 242), TOTAL = new Color(225, 232, 242);
+
 	/** Gray background for the cells that cannot be changed, and a tooltip on each header telling what the column is */
 	private static class PlanTable extends JTable {
 		private static final long serialVersionUID = 1L;
-		private static final Color READ_ONLY = new Color(242, 242, 242), TOTAL = new Color(225, 232, 242);
 		private final String[] headers;
 		PlanTable(AbstractTableModel model, String[] headers) {
 			super(model);

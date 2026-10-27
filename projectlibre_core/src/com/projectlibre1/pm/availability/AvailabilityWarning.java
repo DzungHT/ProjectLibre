@@ -99,6 +99,21 @@ public final class AvailabilityWarning {
 		return NEVER;
 	}
 
+	/** True if a work resource has Max Units over 0% during all of a period [start, end) */
+	public static boolean isAvailable(Resource resource, long start, long end) {
+		AvailabilityTable table = resource.getAvailabilityTable();
+		if (table == null || !resource.isLabor())
+			return true;
+		List periods = table.getList();
+		for (int p = 0; p < periods.size(); p++) {
+			Availability period = (Availability) periods.get(p);
+			long periodEnd = p == periods.size() - 1 ? NEVER : ((Availability) periods.get(p + 1)).getStart();
+			if (period.getMaximumUnits() <= 0 && (period.isFirst() || period.getStart() < end) && periodEnd > start)
+				return false;
+		}
+		return true;
+	}
+
 	/**
 	 * For the indicator of a task: one line per assigned resource and period of 0% overlapping its assignment,
 	 * empty when all are available. Completed and cancelled tasks have none

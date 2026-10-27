@@ -603,9 +603,9 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 
 	/** Asks the options of the suggestions, then suggests a person for the tasks without people and not locked */
 	private void suggest() {
-		final JCheckBox keepFunction = new JCheckBox(Messages.getString("AssignmentBoard.KeepFunction")); //$NON-NLS-1$
-		final JCheckBox keepCluster = new JCheckBox(Messages.getString("AssignmentBoard.KeepCluster")); //$NON-NLS-1$
-		final JCheckBox preferExisting = new JCheckBox(Messages.getString("AssignmentBoard.PreferExisting")); //$NON-NLS-1$
+		final JCheckBox keepFunction = WrappedText.wrap(new JCheckBox(Messages.getString("AssignmentBoard.KeepFunction")), 420); //$NON-NLS-1$
+		final JCheckBox keepCluster = WrappedText.wrap(new JCheckBox(Messages.getString("AssignmentBoard.KeepCluster")), 420); //$NON-NLS-1$
+		final JCheckBox preferExisting = WrappedText.wrap(new JCheckBox(Messages.getString("AssignmentBoard.PreferExisting")), 420); //$NON-NLS-1$
 		keepFunction.setSelected(suggestOptions.isKeepFunction());
 		keepCluster.setSelected(suggestOptions.isKeepCluster());
 		preferExisting.setSelected(suggestOptions.isPreferExisting());
@@ -754,7 +754,7 @@ public final class AssignmentBoardDialog extends AbstractDialog {
 					getTitle(), JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
-		JCheckBox withLocked = new JCheckBox(MessageFormat.format(Messages.getString("AssignmentBoard.WithLocked"), String.valueOf(locked))); //$NON-NLS-1$
+		JCheckBox withLocked = WrappedText.wrap(new JCheckBox(MessageFormat.format(Messages.getString("AssignmentBoard.WithLocked"), String.valueOf(locked))), 420); //$NON-NLS-1$
 		withLocked.setEnabled(locked > 0);
 		JPanel panel = new JPanel(new GridBagLayout());
 		GridBagConstraints c = new GridBagConstraints();

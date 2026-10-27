@@ -178,7 +178,7 @@ public class TaskIndicatorsComponent extends IndicatorsComponent{
 					text.append("<br>- ").append(period); //$NON-NLS-1$
 				text.append("<br>"); //$NON-NLS-1$
 			}
-			// several people, a wrong role or a missing skill on a task of an activity, see AssignmentBoard
+			// a wrong role or a missing skill on a task of an activity, see AssignmentBoard
 			List<String> issues = AssignmentBoard.taskIssues((NormalTask)indicators);
 			if (!issues.isEmpty()) {
 				setLook(assignmentIssue,isSelected,hasFocus);

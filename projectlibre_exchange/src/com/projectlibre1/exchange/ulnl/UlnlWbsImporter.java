@@ -76,7 +76,7 @@ import com.projectlibre1.pm.task.Project;
  * Replaces the WBS of a project with the tree read from a ULNL workbook.
  * Project information, resources and calendars are kept. The whole import is a single undo step.
  * The tasks keep the key, function code, activity and lane of the ULNL, and the work of the activities as
- * original estimate.
+ * original estimate. Their work is the part of it planned by the effort ratios of the project.
  * The work is done in small steps by next(), so that a progress dialog can repaint between them.
  */
 public class UlnlWbsImporter {
@@ -160,7 +160,7 @@ public class UlnlWbsImporter {
 			if (workIterator.hasNext()) {
 				Map.Entry<NormalTask, Double> entry = workIterator.next();
 				NormalTask task = entry.getKey();
-				task.setWork(Duration.getInstance(entry.getValue(), TimeUnit.HOURS));
+				task.setWork(task.getPlannedEstimate()); // the effort ratio of the project applies
 				task.markTaskAsNeedingRecalculation();
 				done++;
 				return false;

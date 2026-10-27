@@ -141,7 +141,7 @@ public final class ValidateLinksDialog extends AbstractDialog {
 						String.valueOf(validator.getStartedCount()))));
 			return builder.getPanel();
 		}
-		FormLayout layout = new FormLayout("460dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		FormLayout layout = new FormLayout(WrappedText.column(740), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
 		String summary = MessageFormat.format(Messages.getString("ValidateLinks.Summary"), //$NON-NLS-1$
@@ -151,7 +151,7 @@ public final class ValidateLinksDialog extends AbstractDialog {
 		builder.append(new JLabel(summary));
 		builder.append(createFilter());
 		builder.append(createTable());
-		builder.append(new JLabel("<html><div style='width:740px'>" + Messages.getString("ValidateLinks.Help") + "</div></html>")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		builder.append(new JLabel(WrappedText.html(Messages.getString("ValidateLinks.Help"), 740))); //$NON-NLS-1$
 		return builder.getPanel();
 	}
 

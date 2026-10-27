@@ -184,7 +184,7 @@ public class AssignmentBoard {
 		public double getUnits() { return line.getPoint() * line.getAllocation(); }
 		/** Effort the person can do, hours at point 1.0: point × % × working hours × utilization */
 		public double getCapacityHours() { return line.getOutputHoursPerPerson(); }
-		/** Effort of the tasks chosen for the person, hours at point 1.0. A task of several people is shared */
+		/** Effort of the tasks chosen for the person, hours at point 1.0. A task of several people is shared by their Max Units, see share() */
 		public double getAssignedHours() { return assignedHours; }
 		public int getTasks() { return tasks; }
 		/** Assigned / capacity, %. Infinite if the person has work and no capacity */
@@ -290,15 +290,48 @@ public class AssignmentBoard {
 			Person suggested = row.suggestion == null ? null : personOf.get(row.suggestion);
 			if (suggested != null)
 				suggested.suggestedHours += row.getHours();
-			int count = row.resources.size();
 			for (Resource resource : row.resources) {
 				Person person = personOf.get(resource);
 				if (person == null)
 					continue;
-				person.assignedHours += row.getHours() / count;
+				person.assignedHours += row.getHours() * share(row, resource);
 				person.tasks++;
 			}
 		}
+	}
+
+	/**
+	 * Part of the work of a task done by one of its people: its Max Units (point × allocation) over the ones of all the
+	 * people, as ProjectLibre shares the work of a task between its assignments. Equal parts if no person has units
+	 */
+	public double share(Row row, Resource resource) {
+		double total = 0;
+		for (Resource r : row.resources)
+			total += units(r);
+		return total <= EPSILON ? 1.0 / row.resources.size() : units(resource) / total;
+	}
+
+	/** Max Units of a person in the plan, 1 for a resource without role */
+	private double units(Resource resource) {
+		Person person = personOf.get(resource);
+		return person == null ? 1 : person.getUnits();
+	}
+
+	/**
+	 * Gives a task to a group of people, instead of the people it had, and drops its suggestion. Empty removes its
+	 * people. Call calculate() after.
+	 * @return false if the task is locked and was kept
+	 */
+	public boolean setPeople(Row row, Collection<? extends Resource> resources) {
+		if (!row.isActivity())
+			return true;
+		if (row.locked)
+			return false;
+		row.resources.clear();
+		row.resources.addAll(resources);
+		row.suggestion = null;
+		row.noCandidate = false;
+		return true;
 	}
 
 	/**
@@ -701,10 +734,8 @@ public class AssignmentBoard {
 		return issues;
 	}
 
-	/** Several people, people of another role or without the skill of a task. A resource without role is not checked */
+	/** People of another role or without the skill of a task: a group of people of the task is not a warning. A resource without role is not checked */
 	private static void addIssues(String role, String skill, List<Resource> resources, List<String> issues) {
-		if (resources.size() > 1)
-			issues.add(MessageFormat.format(Messages.getString("AssignmentBoard.Several"), names(resources))); //$NON-NLS-1$
 		for (Resource resource : resources) {
 			if (!(resource instanceof ResourceImpl) || ((ResourceImpl) resource).getLaborRole() == null)
 				continue;

@@ -412,6 +412,13 @@ public class CriticalPath implements SchedulingAlgorithm {
 					task.invalidateSchedules();
 					task.markTaskAsNeedingRecalculation();
 				}
+				if (field != null && task.isWbsParent()) { // the tasks below a summary are scheduled within its constraint: they are all recalculated, else moving the date of the constraint or removing it does not move them
+					if (suspendUpdates)
+						needsMarkAll = true;
+					else
+						project.markAllTasksAsNeedingRecalculation(true);
+					task = null;
+				}
 			}
 			calculate(true,task);
 

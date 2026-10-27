@@ -217,10 +217,10 @@ public final class SkillCatalogDialog extends AbstractDialog {
 		buttons.add(remove);
 		buttons.add(defaults);
 
-		FormLayout layout = new FormLayout("320dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		FormLayout layout = new FormLayout(WrappedText.column(460), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
-		builder.append(new JLabel("<html><div style='width:460px'>" + Messages.getString("SkillCatalog.Help") + "</div></html>")); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		builder.append(new JLabel(WrappedText.html(Messages.getString("SkillCatalog.Help"), 460))); //$NON-NLS-1$
 		builder.append(scroll);
 		builder.append(buttons);
 		return builder.getPanel();

@@ -455,6 +455,14 @@ public class ResourcePlan {
 		return key(line.role, line.skill) + " " + line.level; //$NON-NLS-1$
 	}
 
+	/** Codes of the activities of the ULNL done by a role (GP, PT, KT), in the order of the work */
+	public static String[] activities() {
+		String[] activities = new String[ACTIVITY_ROLES.length];
+		for (int i = 0; i < activities.length; i++)
+			activities[i] = ACTIVITY_ROLES[i][0];
+		return activities;
+	}
+
 	/** Role of the tasks of an activity, null if it is not an activity of the ULNL */
 	public static String role(String activity) {
 		if (activity != null)

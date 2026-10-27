@@ -241,11 +241,11 @@ public final class UlnlLaneMappingDialog extends AbstractDialog {
 		for (boolean b : isNew)
 			if (b)
 				newCodes++;
-		FormLayout layout = new FormLayout("300dlu:grow", ""); //$NON-NLS-1$ //$NON-NLS-2$
+		FormLayout layout = new FormLayout(WrappedText.column(420), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
-		builder.append(new JLabel("<html><div style='width:420px'>" + MessageFormat.format(Messages.getString("UlnlLaneMapping.Help"), //$NON-NLS-1$ //$NON-NLS-2$
-				String.valueOf(codes.size()), String.valueOf(newCodes)) + "</div></html>")); //$NON-NLS-1$
+		builder.append(new JLabel(WrappedText.html(MessageFormat.format(Messages.getString("UlnlLaneMapping.Help"), //$NON-NLS-1$
+				String.valueOf(codes.size()), String.valueOf(newCodes)), 420)));
 		builder.append(scroll);
 		builder.append(bulk);
 		return builder.getPanel();

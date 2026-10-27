@@ -13,8 +13,8 @@ xếp ngày (`levelingDelay`). Ở đây máy chỉ gợi ý, người duyệt. 
 
 - Giao các task hoạt động của ULNL (GP, PT, KT; sau này UT) cho resource có role: người có sẵn hoặc TBD do Resource Plan
   tạo.
-- **Một task = một người**, giống giả định của Resource Plan (mục 4.2). Không tách một task cho nhiều người. Chức năng
-  quá lớn thì tách trong ULNL.
+- **Một task = một người** trong hộp thoại, giống giả định của Resource Plan (mục 4.2). Trên Gantt (mục 9) có thể giao
+  một cụm cho **một nhóm**: mỗi task về những người trong nhóm đúng role và kỹ năng, chia work theo Max Units.
 - Task đã hoàn thành, đã cancel, task cha: bỏ qua, không hiện.
 - Ngoài phạm vi: thứ tự task của mỗi người, ngày bắt đầu (bước 3), tải theo tuần (biểu đồ resource của ProjectLibre sau
   bước 3), task Level of Effort cho PM/QA.
@@ -38,7 +38,7 @@ Cùng công thức với Resource Plan, nên con số khớp giữa hai bước:
 ```
 năng lực (giờ quy đổi point 1.0) = năng lực 1 người của dòng Resource Plan chứa người đó
                                  = point × % phân bổ × giờ làm việc trong [Từ, Đến] ∩ [bắt đầu, deadline] × hệ số sử dụng
-đã giao                          = Σ Work các task giao cho người đó (task nhiều người thì chia đều)
+đã giao                          = Σ Work các task giao cho người đó (task nhiều người thì chia theo tỉ lệ Max Units, như ProjectLibre)
 tải                              = đã giao / năng lực
 ```
 
@@ -170,7 +170,7 @@ Gợi ý không tính ngày, nên có thể đề xuất một người làm nhi
   (khoảng chứa ngày bắt đầu task; nếu 0% thì khoảng đầu tiên sau đó có units > 0). Work giữ nguyên, ProjectLibre tự
   tính duration = Work / units. Không dùng `levelingDelay`, không đổi ngày, không đổi link.
 - Cả lần Apply là một bước Undo.
-- Task có nhiều hơn một phân công (sửa tay ngoài hộp thoại): hiện tất cả người, cảnh báo; giao lại thì thay bằng một người.
+- Task có nhiều hơn một phân công (giao theo nhóm, hoặc sửa tay): hiện tất cả người, không cảnh báo; giao lại trong hộp thoại thì thay bằng một người.
 - Phân công tới resource không có role (resource cũ, không phải labor): giữ nguyên, hiện tên, không tính tải.
 - **Khoá** là một field của task (`NormalTask.assignmentLocked`), lưu trong file .pod; ghi khi Apply, cùng bước Undo
   với phân công. Tham số Gợi ý nhớ bằng `Preferences` (dùng chung mọi dự án). Cột *Đề xuất* không lưu: đóng hộp thoại
@@ -187,24 +187,79 @@ Dạng icon (không popup), trong hộp thoại và ở cột Indicators của b
 | Chưa giao | Task hoạt động không có phân công | Hộp thoại |
 | Sai role | Role của người khác role của activity | Hộp thoại + bảng task |
 | Thiếu kỹ năng | `canDo()` sai | Hộp thoại + bảng task |
-| Nhiều người | Task có hơn một phân công | Hộp thoại + bảng task |
 | Quá tải | Tải của người vượt ngưỡng (cam/đỏ) | Bên phải hộp thoại |
 | Không có năng lực | Người không có khoảng nào Max Units > 0 | Bên phải hộp thoại |
 
 Tooltip ghi lý do cụ thể (ví dụ: *cần BE, DEV J #2 chỉ có FE*). Ở bảng task, icon riêng (người + tam giác cam) chỉ hiện
 với task hoạt động chưa hoàn thành, chưa cancel; tính lại mỗi lần vẽ từ phân công hiện có, không cần mở hộp thoại.
 
-## 9. Lộ trình
+## 9. Giao việc trên Gantt (A4)
+
+Hộp thoại trả lời *ai làm*, *đủ năng lực chưa*, nhưng không cho thấy module xong khi nào. Khung **Giao việc trên Gantt**
+là một cửa sổ phụ dưới Gantt (như Histogram), để giao ngay trên WBS của Gantt và nhìn thanh Gantt đổi theo.
+
+- Mở/đóng: nút *Giao việc trên Gantt* ở ribbon HTD Planner (nhóm Planning) và ở nhóm cửa sổ phụ của tab View. Đang ở
+  view không phải task thì chuyển sang Gantt.
+- Dòng trên: các task đang chọn trên Gantt (task, MD, số chưa giao, **từ ngày – đến ngày**, người làm), và kết quả lần
+  giao gần nhất: số task, kết thúc dự án trước → sau, so với deadline của Resource Plan.
+- Bảng người như bên phải hộp thoại: role, kỹ năng, level, thanh tải, đã giao, số task, MD trong lựa chọn, **bắt đầu
+  sớm nhất / kết thúc muộn nhất** của các task của người đó trong dự án. Người không làm được các task đang chọn bị làm
+  mờ; người đang làm task trong lựa chọn được tô nền.
+- **Timeline của phần đang chọn** (A7, `SelectionTimeline`), bảng bên phải bảng người, tính từ ngày thật của dự án (sau
+  khi giao và nối lại chuỗi), với các cột từ ngày, đến ngày, số ngày làm việc, MD, số task chưa giao và một thanh trên
+  cùng thang thời gian của dòng Tổng:
+  - **Tổng**: các task hạng mục đang chọn (tên các module/cụm đang chọn).
+  - **Theo hạng mục**: Giải pháp (BA), Phát triển (DEV), Kiểm thử (TESTER), theo thứ tự của ULNL; Phát triển tách theo
+    kỹ năng yêu cầu (BE, FE...) khi có nhiều hơn một.
+  - **Theo người**: mỗi người làm task trong phần đang chọn, từ task đầu tới task cuối, MD là phần work của người đó.
+  - **Theo cụm con**: các cụm ngay dưới module/cụm đang chọn (hoặc từng cụm, khi chọn nhiều cụm).
+  - Task chưa giao vẫn tính vào khoảng ngày nhưng ngày của chúng chưa theo người nào: cột *Chưa giao* và tooltip báo.
+- Giao: chọn task hoặc module trên Gantt, nhấp đúp vào người (hoặc *Giao cho người đã chọn*). Cùng quy tắc với hộp thoại
+  (mục 4.3): dưới dòng tổng hợp chỉ giao task đúng role/kỹ năng, task chọn trực tiếp sai role thì hỏi, task khoá giữ
+  nguyên. *Bỏ giao* xoá người của các task đang chọn.
+- **Giao cho nhóm** (A5): chọn nhiều người bằng Ctrl hoặc Shift rồi bấm *Giao cho người hoặc nhóm đã chọn*. Dùng khi giao
+  một cụm chức năng cho một nhóm tự điều phối, chỉ cần theo dõi timeline tổng thể:
+  - Mỗi task về **tất cả** người trong nhóm đúng role và kỹ năng của task (BA làm GP, DEV làm PT theo kỹ năng, TESTER làm
+    KT). Task không ai trong nhóm làm được thì giữ người cũ.
+  - Work của task chia theo tỉ lệ Max Units (point × % phân bổ) của từng người: ProjectLibre tự chia khi các phân công có
+    units bằng Max Units, duration = Work / tổng units. Tải trong hộp thoại và khung tính cùng tỉ lệ đó.
+  - Auto Link đặt task vào chuỗi của từng người trong nhóm, nên các task của cụm làm lần lượt bằng cả nhóm: cụm kéo dài khoảng
+    tổng work / năng lực nhóm, theo thứ tự sẵn sàng. Không task nào của một người chồng nhau.
+  - **Theo ngày available** (A6, ô *Với nhóm, mỗi task chỉ giao cho người available trong thời gian của task*, mặc định
+    bật, nhớ bằng `Preferences`): task nhóm chỉ giao cho người có Max Units > 0% suốt từ ngày bắt đầu tới ngày kết thúc
+    của task (`AvailabilityWarning.isAvailable`). Người vào dự án sau, rời dự án trước hoặc nghỉ 0% giữa chừng thì không
+    nhận task đó, những người còn lại trong nhóm chia nhau. Không ai available thì giao cho người available sớm nhất
+    (`availableFrom`), task chờ người đó (ràng buộc ngày vào dự án của Auto Link).
+  - Ngày phụ thuộc vào người được giao (ít người thì task dài hơn) và vào chuỗi, nên chọn lại người theo ngày mới, ghi và
+    nối lại chuỗi, lặp tới khi người không đổi nữa, tối đa 6 lần, trong cùng một bước Undo. Còn đổi sau 6 lần thì báo, giao
+    lại để chọn theo ngày mới nhất. Chỉ áp dụng cho task có từ 2 người hợp role trở lên; giao một người thì giữ nguyên.
+  - Ví dụ: cùng cụm 54 task, DEV thứ hai vào dự án 20/10: các task DEV trước 20/10 chỉ Dev A1 làm, sau đó hai người cùng
+    làm; ổn định sau 2 lần (0,4 giây), cụm xong 17/11. Không bật thì các task chờ người vào sau, cụm xong 26/11.
+  - Nhóm đang chọn vẫn được giữ sau khi giao, để giao tiếp cụm khác.
+  - Ví dụ (dự án 2.940 task): cụm 54 task giao cho 1 BA, 2 DEV (units 1,0 và 2,03), 1 TESTER; task PT 20h chia 6,6h và
+    13,4h, kéo dài 6,6h; cụm xong 12/11, so với 26/11 khi nhóm chỉ có 1 DEV.
+- **Ghi ngay vào dự án** (`GanttAssigner`): ghi phân công như Apply của hộp thoại (mục 7), rồi nếu bật *Nối lại chuỗi
+  công việc của mỗi người* (mặc định bật, nhớ bằng `Preferences`) thì chạy Auto Link cho toàn bộ dự án với tuỳ chọn của
+  lần Auto Link gần nhất (luôn nối chuỗi theo người). Cả hai là **một bước Undo**. Có link vòng thì không đổi link, báo
+  số task.
+- Khung tự đọc lại sau mỗi lần lịch thay đổi (Undo, sửa trên Gantt, Auto Link), chậm 0,4 giây để gộp các thay đổi.
+- Đo trên dự án 2.940 task, 32 người: giao 18 task của một module và nối lại chuỗi mất khoảng 0,3 giây.
+
+## 10. Lộ trình
 
 | Giai đoạn | Nội dung |
 |---|---|
 | A1 | Hộp thoại: bảng task + bảng người, tải, giao tay hàng loạt, Giao cụm, Bỏ giao, cảnh báo, Apply (một Undo), đọc lại từ dự án |
 | A2 | Gợi ý + Chấp nhận đề xuất, khoá task (lưu trong dự án), tham số Gợi ý, kéo-thả task sang người |
-| A3 | Thay người, Chuyển bớt việc, Xuất Excel; icon Sai role / Thiếu kỹ năng / Nhiều người ở bảng task |
+| A3 | Thay người, Chuyển bớt việc, Xuất Excel; icon Sai role / Thiếu kỹ năng ở bảng task (bỏ cảnh báo Nhiều người ở A5) |
+| A4 | Giao việc trên Gantt: cửa sổ phụ dưới Gantt, ghi ngay và nối lại chuỗi theo người (mục 9) |
+| A5 | Giao cụm cho một nhóm trên Gantt: chia work theo Max Units, bỏ cảnh báo Nhiều người (mục 9) |
+| A6 | Nhóm theo ngày available: mỗi task chỉ giao người available trong thời gian của task, chọn lại tới khi ổn định (mục 9) |
+| A7 | Timeline của phần đang chọn: tổng, theo hạng mục (và kỹ năng), theo người, theo cụm con (mục 9) |
 
 Sau đó: bước 3 Re-link — mặc định nối task của mỗi người theo thứ tự WBS, đổi thứ tự ở bước đó.
 
-## 10. Đã chốt
+## 11. Đã chốt
 
 1. **Ngưỡng:** dùng chung ngưỡng thiếu/thừa của Resource Plan.
 2. **Module lớn:** người dùng tự đánh giá, chia thành các cấp WBS thấp hơn rồi giao từng phần. Không giới hạn MD/module/người.

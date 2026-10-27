@@ -144,8 +144,10 @@ import com.projectlibre1.dialog.AbstractDialog;
 import com.projectlibre1.dialog.BaselineDialog;
 import com.projectlibre1.dialog.BusyOperationDialog;
 import com.projectlibre1.dialog.TaskDefaultSettingsDialog;
+import com.projectlibre1.dialog.EffortRatioDialog;
 import com.projectlibre1.dialog.ImportUlnlDialog;
 import com.projectlibre1.dialog.AutoLinkDialog;
+import com.projectlibre1.pm.dependency.autolink.FinishSummary;
 import com.projectlibre1.dialog.ResourcePlanDialog;
 import com.projectlibre1.dialog.AssignmentBoardDialog;
 import com.projectlibre1.pm.assignment.board.AssignmentBoard;
@@ -154,6 +156,8 @@ import com.projectlibre1.dialog.LaborCatalogDialog;
 import com.projectlibre1.dialog.SkillCatalogDialog;
 import com.projectlibre1.dialog.UlnlDiffDialog;
 import com.projectlibre1.dialog.ValidateLinksDialog;
+import com.projectlibre1.dialog.WrappedText;
+import com.projectlibre1.pm.criticalpath.Rescheduler;
 import com.projectlibre1.pm.criticalpath.ScheduleValidator;
 import com.projectlibre1.pm.dependency.autolink.AutoLinkPlan;
 import com.projectlibre1.pm.dependency.autolink.AutoLinker;
@@ -201,6 +205,7 @@ import com.projectlibre1.menu.MenuActionConstants;
 import com.projectlibre1.menu.MenuActionsMap;
 import com.projectlibre1.menu.MenuManager;
 import com.projectlibre1.options.CalendarOption;
+import com.projectlibre1.options.EditOption;
 import com.projectlibre1.pm.assignment.Assignment;
 import com.projectlibre1.pm.graphic.IconManager;
 import com.projectlibre1.pm.graphic.TabbedNavigation;
@@ -1063,12 +1068,15 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		actionsMap.addHandler(ACTION_ESTIMATE_COLUMNS, new EstimateColumnsAction());
 		actionsMap.addHandler(ACTION_SET_ORIGINAL_ESTIMATE, new SetOriginalEstimateAction());
 		actionsMap.addHandler(ACTION_RESET_WORK_TO_ESTIMATE, new ResetWorkToEstimateAction());
+		actionsMap.addHandler(ACTION_EFFORT_RATIO, new EffortRatioAction());
 		actionsMap.addHandler(ACTION_CANCEL_TASK, new CancelTaskAction(true));
 		actionsMap.addHandler(ACTION_UNCANCEL_TASK, new CancelTaskAction(false));
 		actionsMap.addHandler(ACTION_AUTO_LINK, new AutoLinkAction());
 		actionsMap.addHandler(ACTION_VALIDATE_LINKS, new ValidateLinksAction());
+		actionsMap.addHandler(ACTION_RESCHEDULE, new RescheduleAction());
 		actionsMap.addHandler(ACTION_RESOURCE_PLAN, new ResourcePlanAction());
 		actionsMap.addHandler(ACTION_ASSIGNMENT_BOARD, new AssignmentBoardAction());
+		actionsMap.addHandler(ACTION_ASSIGN_VIEW, new AssignViewAction());
 		actionsMap.addHandler(ACTION_LABOR_CATALOG, new LaborCatalogAction());
 		actionsMap.addHandler(ACTION_SKILL_CATALOG, new SkillCatalogAction());
 		actionsMap.addHandler(ACTION_LABOR_COLUMNS, new LaborColumnsAction());
@@ -1707,7 +1715,32 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 	public class EstimateColumnsAction extends ToggleColumnsAction {
 		private static final long serialVersionUID = 1L;
 		public EstimateColumnsAction() {
-			super(new String[] {"Field.originalEstimate", "Field.manDays", "Field.manMonths", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+			super(new String[] {"Field.originalEstimate", "Field.manDays", "Field.manMonths", "Field.effortRatio", "Field.reserveDays", "Field.estimateVariance", "Field.functionCode", "Field.activity", "Field.lane"}); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$ //$NON-NLS-9$
+		}
+	}
+	/**
+	 * Sets the part of the ULNL estimate of each activity planned as work, see EffortRatioDialog, and the work of the
+	 * tasks to it. The rest is kept as reserve
+	 */
+	public class EffortRatioAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			EffortRatioDialog.Result ratios = EffortRatioDialog.doDialog(frame.getProject());
+			if (ratios == null)
+				return;
+			DocumentFrame.EffortRatioResult result = frame.doEffortRatios(ratios.ratios, ratios.includeEdited);
+			if (result.edited > 0 || result.started > 0)
+				Alert.warn(MessageFormat.format(Messages.getString("EffortRatio.Done"), String.valueOf(result.changed), //$NON-NLS-1$
+						String.valueOf(result.edited), String.valueOf(result.started)), getFrameInstance());
+		}
+		protected boolean allowed(boolean enable) {
+			if (enable==false) return true;
+			return isDocumentWritable();
 		}
 	}
 	public class SetOriginalEstimateAction extends MenuActionsMap.DocumentMenuAction {
@@ -1842,41 +1875,51 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			AutoLinkPlan plan = AutoLinkDialog.doDialog(frame.getProject(), selection);
 			if (plan == null || plan.isEmpty())
 				return;
-			final AutoLinker linker = new AutoLinker(frame.getProject(), plan, frame);
-			final String[] messages = {
-					Messages.getString("AutoLink.Removing"), //$NON-NLS-1$
-					Messages.getString("AutoLink.Creating"), //$NON-NLS-1$
-					Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
-			Frame f = getFrameInstance();
-			try {
-				BusyOperationDialog.run(f, Messages.getString("AutoLink.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
-					boolean started = false;
-					public boolean next(BusyOperationDialog dialog) {
-						if (!started) {
-							started = true;
-							dialog.setCancelable(false); // the links are changed from the first step
-							dialog.setProgress(messages[linker.getPhase()], 0, linker.getTotal());
-							dialog.endSlice();
-							return false;
-						}
-						if (linker.next())
-							return true;
-						dialog.setProgress(messages[Math.min(linker.getPhase(), messages.length - 1)], linker.getDone(), linker.getTotal());
-						if (linker.isLongStep())
-							dialog.endSlice(); // show the message before the long step
-						return false;
-					}
-				});
-			} catch (Exception e) {
-				e.printStackTrace();
-				Alert.error(e.getMessage(), f);
-			} finally {
-				linker.close();
-			}
+			if (!applyLinks(frame, plan) || plan.getEstimatedFinish() == 0)
+				return;
+			Project project = frame.getProject(); // the finish of the people, compared with the deadline
+			JOptionPane.showMessageDialog(getFrameInstance(), FinishSummary.finishText(project, project.getEnd(), "AutoLink.Finish"), //$NON-NLS-1$
+					Messages.getString("AutoLink.Title"), JOptionPane.INFORMATION_MESSAGE); //$NON-NLS-1$
 		}
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	/** Applies the links of Auto Link with a progress dialog. Returns false on an error */
+	private boolean applyLinks(DocumentFrame frame, AutoLinkPlan plan) {
+		final AutoLinker linker = new AutoLinker(frame.getProject(), plan, frame);
+		final String[] messages = {
+				Messages.getString("AutoLink.Removing"), //$NON-NLS-1$
+				Messages.getString("AutoLink.Creating"), //$NON-NLS-1$
+				Messages.getString("Text.recalculatingSchedule")}; //$NON-NLS-1$
+		Frame f = getFrameInstance();
+		try {
+			BusyOperationDialog.run(f, Messages.getString("AutoLink.Title"), new BusyOperationDialog.Step() { //$NON-NLS-1$
+				boolean started = false;
+				public boolean next(BusyOperationDialog dialog) {
+					if (!started) {
+						started = true;
+						dialog.setCancelable(false); // the links are changed from the first step
+						dialog.setProgress(messages[linker.getPhase()], 0, linker.getTotal());
+						dialog.endSlice();
+						return false;
+					}
+					if (linker.next())
+						return true;
+					dialog.setProgress(messages[Math.min(linker.getPhase(), messages.length - 1)], linker.getDone(), linker.getTotal());
+					if (linker.isLongStep())
+						dialog.endSlice(); // show the message before the long step
+					return false;
+				}
+			});
+			return true;
+		} catch (Exception e) {
+			e.printStackTrace();
+			Alert.error(e.getMessage(), f);
+			return false;
+		} finally {
+			linker.close();
 		}
 	}
 	/** Lists the tasks whose dates do not follow their links or constraints, see ScheduleValidator */
@@ -1889,6 +1932,31 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 			DocumentFrame frame = getCurrentFrame();
 			frame.finishAnyOperations();
 			ValidateLinksDialog.show(frame, ScheduleValidator.validate(frame.getProject()));
+		}
+	}
+	/** Calculates the schedule of the whole project again, like opening it, and tells how many tasks moved */
+	public class RescheduleAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			frame.finishAnyOperations();
+			Project project = frame.getProject();
+			Rescheduler result;
+			showWaitCursor(true);
+			try {
+				result = Rescheduler.reschedule(project);
+			} finally {
+				showWaitCursor(false);
+			}
+			String before = EditOption.getInstance().getShortDateFormat().format(result.getFinishBefore());
+			String text = MessageFormat.format(Messages.getString(result.getChangedCount() == 0 ? "Reschedule.Same" : "Reschedule.Changed"), //$NON-NLS-1$ //$NON-NLS-2$
+					String.valueOf(result.getTaskCount()), String.valueOf(result.getChangedCount()), before)
+					+ " " + FinishSummary.finishText(project, project.getEnd(), "AutoLink.Finish"); //$NON-NLS-1$ //$NON-NLS-2$
+			JOptionPane.showMessageDialog(getFrameInstance(), WrappedText.text(text, 460), Messages.getString("Reschedule.Title"), //$NON-NLS-1$
+					JOptionPane.INFORMATION_MESSAGE);
 		}
 	}
 	/** Cancels or un-cancels the selected tasks */
@@ -1975,6 +2043,24 @@ public class GraphicManager implements  FrameHolder, NamedFrameListener, WindowS
 		protected boolean allowed(boolean enable) {
 			if (enable==false) return true;
 			return isDocumentWritable();
+		}
+	}
+	/** Shows or hides the people below the Gantt, to give them the tasks selected in it, see AssignView */
+	public class AssignViewAction extends MenuActionsMap.DocumentMenuAction {
+		private static final long serialVersionUID = 1L;
+		public void actionPerformed(ActionEvent arg0) {
+			setMeAsLastGraphicManager();
+			if (!isDocumentActive())
+				return;
+			DocumentFrame frame = getCurrentFrame();
+			if (frame.getActiveBottomView() == frame.getAssignView()) {
+				frame.activateView(ACTION_NO_SUB_WINDOW);
+				return;
+			}
+			BaseView top = frame.getActiveTopView();
+			if (top == null || !top.showsTasks())
+				frame.activateGanttView();
+			frame.activateView(ACTION_ASSIGN_VIEW);
 		}
 	}
 	/** The labor categories: role, level, point and price of a man-month, imported from the NLTC table */
