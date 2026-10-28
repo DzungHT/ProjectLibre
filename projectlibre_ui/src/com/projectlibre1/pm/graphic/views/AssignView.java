@@ -253,6 +253,18 @@ public class AssignView extends JPanel implements BaseView, SelectionNodeListene
 		}), c);
 		panel.add(byAvailability, c);
 		panel.add(relink, c);
+		final JButton relinkOptions = button("AssignView.RelinkOptions", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				AutoLinkDialog.doSettingsDialog(project);
+			}
+		});
+		relinkOptions.setEnabled(relink.isSelected());
+		relink.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				relinkOptions.setEnabled(relink.isSelected());
+			}
+		});
+		panel.add(relinkOptions, c);
 		panel.add(button("AssignView.Board", new ActionListener() { //$NON-NLS-1$
 			public void actionPerformed(ActionEvent e) {
 				Action action = documentFrame.getGraphicManager().getMenuManager().getActionFromId(MenuActionConstants.ACTION_ASSIGNMENT_BOARD);

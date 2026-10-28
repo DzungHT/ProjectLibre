@@ -98,7 +98,8 @@ import com.projectlibre1.util.Alert;
  * Options of Auto Link, with a preview of the links created and removed, of the constraints of the first day of
  * the people and of the estimated finish. The links between activities are rules (source activity, target
  * activity, level N or N-1) the user adds and removes. The options are remembered. Returns the plan to apply, see
- * AutoLinkPlan.
+ * AutoLinkPlan. Opened from Assign, the dialog only changes the options Assign uses to link again the tasks of each
+ * person, see savedSequenceOptions().
  */
 public final class AutoLinkDialog extends AbstractDialog {
 	private static final long serialVersionUID = 1L;
@@ -119,6 +120,7 @@ public final class AutoLinkDialog extends AbstractDialog {
 	private final Project project;
 	private final List<Task> selection;
 	private final String[] choices; // activity codes of the rules: the default ones, then the ones of the project
+	private final boolean settingsOnly; // the options of Assign: the whole project, the tasks of each person linked, no plan
 
 	JRadioButton wholeProject;
 	JRadioButton selectedTasks;
@@ -179,14 +181,24 @@ public final class AutoLinkDialog extends AbstractDialog {
 	 * @return the links to create and remove, or null if cancelled
 	 */
 	public static AutoLinkPlan doDialog(Project project, List<Task> selection) {
-		AutoLinkDialog dialog = new AutoLinkDialog(project, selection);
+		AutoLinkDialog dialog = new AutoLinkDialog(project, selection, false);
 		return dialog.doModal() ? dialog.plan : null;
 	}
 
-	private AutoLinkDialog(Project project, List<Task> selection) {
-		super(GraphicManager.getFrameInstance(), Messages.getString("AutoLink.Title"), true); //$NON-NLS-1$
+	/**
+	 * Changes the options used by Assign to link again the tasks of each person, without linking now. They are also
+	 * the options of the next Auto Link.
+	 * @return false if cancelled
+	 */
+	public static boolean doSettingsDialog(Project project) {
+		return new AutoLinkDialog(project, null, true).doModal();
+	}
+
+	private AutoLinkDialog(Project project, List<Task> selection, boolean settingsOnly) {
+		super(GraphicManager.getFrameInstance(), Messages.getString(settingsOnly ? "AutoLink.SettingsTitle" : "AutoLink.Title"), true); //$NON-NLS-1$ //$NON-NLS-2$
 		this.project = project;
 		this.selection = selection == null || selection.isEmpty() ? null : selection;
+		this.settingsOnly = settingsOnly;
 		listener = new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				updatePreview();
@@ -226,7 +238,8 @@ public final class AutoLinkDialog extends AbstractDialog {
 				rulesChanged();
 			}
 		});
-		linkSequences = new JCheckBox(Messages.getString("AutoLink.LinkSequences"), preferences.getBoolean(PREF_SEQUENCES, true)); //$NON-NLS-1$
+		linkSequences = new JCheckBox(Messages.getString("AutoLink.LinkSequences"), settingsOnly || preferences.getBoolean(PREF_SEQUENCES, true)); //$NON-NLS-1$
+		linkSequences.setEnabled(!settingsOnly); // Assign always links the tasks of each person
 		readyOrder = new JRadioButton(Messages.getString("AutoLink.ReadyOrder")); //$NON-NLS-1$
 		wbsOrder = new JRadioButton(Messages.getString("AutoLink.WbsOrder")); //$NON-NLS-1$
 		ButtonGroup order = new ButtonGroup();
@@ -338,14 +351,16 @@ public final class AutoLinkDialog extends AbstractDialog {
 		if (get)
 			return true;
 		updatePreview();
-		if (!plan.getCircularTasks().isEmpty()) {
+		if (!settingsOnly && !plan.getCircularTasks().isEmpty()) { // Assign tells the circular links after the change of people
 			Alert.error(circularMessage(), this);
 			return false;
 		}
-		preferences.putBoolean(PREF_SCOPE, selectedTasks.isSelected());
+		if (!settingsOnly) {
+			preferences.putBoolean(PREF_SCOPE, selectedTasks.isSelected());
+			preferences.putBoolean(PREF_SEQUENCES, linkSequences.isSelected());
+		}
 		preferences.putBoolean(PREF_ACTIVITIES, linkActivities.isSelected());
 		preferences.put(PREF_RULES, AutoLinkOptions.Rule.format(currentRules()));
-		preferences.putBoolean(PREF_SEQUENCES, linkSequences.isSelected());
 		preferences.putBoolean(PREF_READY_ORDER, readyOrder.isSelected());
 		preferences.putBoolean(PREF_UNASSIGNED, linkUnassigned.isSelected());
 		preferences.putBoolean(PREF_JOIN, joinConstraints.isSelected());
@@ -358,9 +373,13 @@ public final class AutoLinkDialog extends AbstractDialog {
 		FormLayout layout = new FormLayout(WrappedText.column(WIDTH), ""); //$NON-NLS-1$
 		DefaultFormBuilder builder = new DefaultFormBuilder(layout);
 		builder.setDefaultDialogBorder();
-		builder.appendSeparator(Messages.getString("AutoLink.Scope")); //$NON-NLS-1$
-		builder.append(WrappedText.wrap(wholeProject, WIDTH));
-		builder.append(WrappedText.wrap(selectedTasks, WIDTH));
+		if (settingsOnly)
+			builder.append(WrappedText.label(Messages.getString("AutoLink.SettingsHelp"), WIDTH)); //$NON-NLS-1$
+		else {
+			builder.appendSeparator(Messages.getString("AutoLink.Scope")); //$NON-NLS-1$
+			builder.append(WrappedText.wrap(wholeProject, WIDTH));
+			builder.append(WrappedText.wrap(selectedTasks, WIDTH));
+		}
 		builder.appendSeparator(Messages.getString("AutoLink.Rules")); //$NON-NLS-1$
 		builder.append(WrappedText.wrap(linkActivities, WIDTH));
 		builder.append(indented(WrappedText.label(Messages.getString("AutoLink.RulesHelp"), WIDTH - WrappedText.INDENT))); //$NON-NLS-1$
@@ -370,8 +389,10 @@ public final class AutoLinkDialog extends AbstractDialog {
 		builder.append(indented(WrappedText.label(Messages.getString("AutoLink.SequencesHelp"), WIDTH - WrappedText.INDENT))); //$NON-NLS-1$
 		for (AbstractButton option : new AbstractButton[] { readyOrder, wbsOrder, linkUnassigned, joinConstraints })
 			builder.append(WrappedText.wrap(indented(option), WIDTH));
-		builder.appendSeparator(Messages.getString("AutoLink.Preview")); //$NON-NLS-1$
-		builder.append(preview);
+		if (!settingsOnly) {
+			builder.appendSeparator(Messages.getString("AutoLink.Preview")); //$NON-NLS-1$
+			builder.append(preview);
+		}
 		return builder.getPanel();
 	}
 
@@ -406,7 +427,9 @@ public final class AutoLinkDialog extends AbstractDialog {
 		defaultRules.setEnabled(linkActivities.isSelected());
 		for (JComponent option : new JComponent[] { readyOrder, wbsOrder, linkUnassigned, joinConstraints })
 			option.setEnabled(linkSequences.isSelected());
-		plan = AutoLinkPlan.create(project, selectedTasks.isSelected() ? selection : null, options());
+		if (settingsOnly)
+			return; // the links come after the change of people
+		plan =AutoLinkPlan.create(project, selectedTasks.isSelected() ? selection : null, options());
 		int set = 0, removed = 0;
 		for (Long date : plan.getConstraints().values())
 			if (date == 0)
