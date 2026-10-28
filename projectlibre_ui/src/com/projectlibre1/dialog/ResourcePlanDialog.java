@@ -142,15 +142,15 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	private static final int MAX_PERCENT = 1000;
 	// columns of the groups
 	private static final int G_ROLE = 0, G_SKILL = 1, G_HEADCOUNT = 2, G_EXISTING = 3, G_NEW = 4, G_TASKS = 5, G_WBS = 6, G_EXTRA = 7,
-			G_EFFORT = 8, G_OUTPUT = 9, G_BALANCE = 10, G_LOAD = 11;
+			G_EFFORT = 8, G_OUTPUT = 9, G_SHARED = 10, G_BALANCE = 11, G_LOAD = 12;
 	private static final String[] G_HEADERS = { "Role", "Skill", "GroupHeadcount", "GroupExisting", "GroupNew", "Tasks", "WbsDays", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
-			"ExtraDays", "EffortDays", "GroupOutput", "Balance", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+			"ExtraDays", "EffortDays", "GroupOutput", "GroupShared", "Balance", "Load" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
 	// columns of the lines, then a total row
-	private static final int L_SOURCE = 0, L_ROLE = 1, L_SKILL = 2, L_LEVEL = 3, L_FROM = 4, L_TO = 5, L_ALLOCATION = 6, L_QUANTITY = 7,
-			L_HEADCOUNT = 8, L_FTE = 9, L_NLTC = 10, L_RA = 11, L_OUTPUT = 12, L_COST = 13;
-	private static final String[] L_HEADERS = { "LineSource", "LineRole", "LineSkill", "LineLevel", "LineFrom", "LineTo", "LineAllocation", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
-			"LineQuantity", "LineHeadcount", "LineFte", "LineNltc", "LineRa", "LineOutput", "LineCost" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
-	private static final int[] L_WIDTHS = { 70, 60, 60, 110, 85, 85, 40, 60, 65, 45, 45, 70, 100, 95 };
+	private static final int L_SOURCE = 0, L_NAME = 1, L_ROLE = 2, L_SKILL = 3, L_LEVEL = 4, L_FROM = 5, L_TO = 6, L_ALLOCATION = 7,
+			L_QUANTITY = 8, L_HEADCOUNT = 9, L_FTE = 10, L_NLTC = 11, L_RA = 12, L_OUTPUT = 13, L_COST = 14;
+	private static final String[] L_HEADERS = { "LineSource", "LineName", "LineRole", "LineSkill", "LineLevel", "LineFrom", "LineTo", //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$
+			"LineAllocation", "LineQuantity", "LineHeadcount", "LineFte", "LineNltc", "LineRa", "LineOutput", "LineCost" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$ //$NON-NLS-7$ //$NON-NLS-8$
+	private static final int[] L_WIDTHS = { 70, 130, 60, 60, 110, 85, 85, 40, 60, 65, 45, 45, 70, 100, 95 };
 	/** Columns hidden by the user, see ColumnSet */
 	private static final String HIDDEN_COLUMNS = "resourcePlan.hiddenColumns", DEFAULT_HIDDEN_COLUMNS = "LineCost"; //$NON-NLS-1$ //$NON-NLS-2$
 	private static final String HIDDEN_GROUP_COLUMNS = "resourcePlan.hiddenGroupColumns", DEFAULT_HIDDEN_GROUP_COLUMNS = "Tasks"; //$NON-NLS-1$ //$NON-NLS-2$
@@ -616,6 +616,11 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				addLine();
 			}
 		});
+		JButton addNamed = button("ResourcePlan.AddNamed", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				addNamedLine();
+			}
+		});
 		JButton defaultDates = new JButton(Messages.getString("ResourcePlan.DefaultDates")); //$NON-NLS-1$
 		defaultDates.setToolTipText(Messages.getString("ResourcePlan.DefaultDatesTooltip")); //$NON-NLS-1$
 		defaultDates.addActionListener(new ActionListener() {
@@ -686,7 +691,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		lineHeader.add(buttons(sort, lineColumns.button()), BorderLayout.EAST);
 		builder.append(lineHeader);
 		builder.append(lineScroll);
-		builder.append(buttons(addLine, removeLine, defaultDates));
+		builder.append(buttons(addLine, addNamed, removeLine, defaultDates));
 		builder.appendSeparator(Messages.getString("ResourcePlan.Verdict")); //$NON-NLS-1$
 		builder.append(verdictScroll);
 		update(); // the parameters as the fields show them
@@ -758,10 +763,11 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				case G_EXTRA: return amount(group.getExtraHours());
 				case G_EFFORT: return amount(group.getEffortHours());
 				case G_HEADCOUNT: return people(group.getPeople());
-				case G_EXISTING: return people(group.getExistingPeople());
+				case G_EXISTING: return people(group.getNamedPeople());
 				case G_NEW: return people(group.getNewPeople());
 				case G_OUTPUT: return amount(group.getCapacityHours());
-				case G_BALANCE: return balance(group.getCapacityHours() - group.getEffortHours());
+				case G_SHARED: return balance(group.getSharedHours());
+				case G_BALANCE: return balance(group.getBalanceHours());
 				case G_LOAD: return percent(group.getLoad());
 				default: return null;
 				}
@@ -822,16 +828,6 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		return ResourcePlan.Group.OK;
 	}
 
-	/** Expected output less effort of a group, or of all for the total, man-hours. Negative: people are missing */
-	private double groupBalance(int row) {
-		if (!isTotalGroup(row))
-			return plan.getGroups().get(row).getCapacityHours() - plan.getGroups().get(row).getEffortHours();
-		double balance = 0;
-		for (ResourcePlan.Group group : plan.getGroups())
-			balance += group.getCapacityHours() - group.getEffortHours();
-		return balance;
-	}
-
 	private Object groupTotal(int column) {
 		int tasks = 0;
 		double wbs = 0, extra = 0, effort = 0, output = 0;
@@ -858,9 +854,9 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		}
 	}
 
-	/** A number of people, which can have a part of a person shared with other skills. Empty for 0 */
-	private String people(double people) {
-		return Math.abs(people) < 1e-9 ? "" : decimal.format(people); //$NON-NLS-1$
+	/** A number of people, empty for 0 */
+	private static String people(int people) {
+		return people == 0 ? "" : String.valueOf(people); //$NON-NLS-1$
 	}
 
 	/** Man-hours in the unit shown, with a + when there are more than needed */
@@ -886,7 +882,8 @@ public final class ResourcePlanDialog extends AbstractDialog {
 					return getTotal(column);
 				ResourcePlan.Line line = plan.getLines().get(row);
 				switch (column) {
-				case L_SOURCE: return Messages.getString(line.isExisting() ? "ResourcePlan.Existing" : "ResourcePlan.New"); //$NON-NLS-1$ //$NON-NLS-2$
+				case L_SOURCE: return Messages.getString(line.isExisting() ? "ResourcePlan.Existing" : line.isNamed() ? "ResourcePlan.Named" : "ResourcePlan.New"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+				case L_NAME: return line.isNamed() ? line.getName() : ""; //$NON-NLS-1$
 				case L_ROLE: return line.getRole();
 				case L_SKILL: return line.getSkill();
 				case L_LEVEL: return line.getLevel() < 0 ? "" : LaborCatalog.levelText(line.getLevel()); //$NON-NLS-1$
@@ -926,16 +923,32 @@ public final class ResourcePlanDialog extends AbstractDialog {
 			public boolean isCellEditable(int row, int column) {
 				if (isTotalLine(row))
 					return false;
-				if (plan.getLines().get(row).isExisting()) // the role, level and skill of a resource are changed in the resource sheet
+				ResourcePlan.Line line = plan.getLines().get(row);
+				if (line.isExisting()) // the name, role, level and skill of a resource are changed in the resource sheet
 					return column == L_FROM || column == L_TO || column == L_ALLOCATION;
-				return column >= L_ROLE && column <= L_QUANTITY;
+				if (column == L_QUANTITY)
+					return !line.isNamed(); // a named line is one person
+				return column >= L_NAME && column <= L_QUANTITY;
 			}
 			public void setValueAt(Object value, int row, int column) {
 				if (isTotalLine(row))
 					return;
 				ResourcePlan.Line line = plan.getLines().get(row);
-				String text = value == null ? "" : value.toString().trim(); //$NON-NLS-1$
+				final String text = value == null ? "" : value.toString().trim(); //$NON-NLS-1$
 				switch (column) {
+				case L_NAME:
+					if (text.equals(line.isNamed() ? line.getName() : "")) //$NON-NLS-1$
+						return;
+					if (plan.isNameUsed(text, line)) {
+						SwingUtilities.invokeLater(new Runnable() { // once the edit is ended
+							public void run() {
+								JOptionPane.showMessageDialog(ResourcePlanDialog.this, MessageFormat.format(Messages.getString("ResourcePlan.NameUsed"), text)); //$NON-NLS-1$
+							}
+						});
+						return;
+					}
+					line.setName(text); // empty: TBD people again
+					break;
 				case L_ROLE:
 					String role = LaborCatalog.getInstance().findRoleName(text);
 					if (role == null)
@@ -995,6 +1008,19 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		JComboBox roleEditor = new JComboBox(roles.toArray());
 		roleEditor.setEditable(true);
 		lineTable.getColumnModel().getColumn(L_ROLE).setCellEditor(new DefaultCellEditor(roleEditor));
+		// a new name, or one of the resources of the project without a role
+		final JComboBox nameEditor = new JComboBox();
+		nameEditor.setEditable(true);
+		lineTable.getColumnModel().getColumn(L_NAME).setCellEditor(new DefaultCellEditor(nameEditor) {
+			private static final long serialVersionUID = 1L;
+			public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+				nameEditor.removeAllItems();
+				nameEditor.addItem(""); //$NON-NLS-1$
+				for (String name : plan.getUnplannedNames())
+					nameEditor.addItem(name);
+				return super.getTableCellEditorComponent(table, value, isSelected, row, column);
+			}
+		});
 		Set<Object> skills = new LinkedHashSet<Object>();
 		skills.add(""); //$NON-NLS-1$
 		for (Object skill : SkillCatalog.allSkills())
@@ -1141,6 +1167,36 @@ public final class ResourcePlanDialog extends AbstractDialog {
 			}
 			menu.show(button, 0, button.getHeight());
 		}
+	}
+
+	/**
+	 * Adds a named person: a line of one person like the selected line or group, whose name is typed or chosen at once.
+	 * The name of a resource of the project without a role gives it the line when the plan is applied
+	 */
+	private void addNamedLine() {
+		stopEditing();
+		int[] selectedLines = selectedLines();
+		int selectedGroup = groupTable.getSelectedRow();
+		ResourcePlan.Line line;
+		if (selectedLines.length > 0) {
+			ResourcePlan.Line copy = plan.getLines().get(selectedLines[0]);
+			line = new ResourcePlan.Line(copy.getRole(), copy.getLevel(), false);
+			line.setSkill(copy.getSkill());
+		} else if (plan.getGroups().isEmpty())
+			return;
+		else {
+			ResourcePlan.Group group = plan.getGroups().get(selectedGroup < 0 || selectedGroup >= plan.getGroups().size() ? 0 : selectedGroup);
+			line = new ResourcePlan.Line(group.getRole(), ResourcePlan.standardLevel(group.getRole()), false);
+			line.setSkill(group.getSkill());
+		}
+		line.setQuantity(1);
+		plan.getLines().add(line);
+		update();
+		int row = plan.getLines().size() - 1;
+		lineTable.changeSelection(row, L_NAME, false, false);
+		int column = lineTable.convertColumnIndexToView(L_NAME);
+		if (column >= 0 && lineTable.editCellAt(row, column) && lineTable.getEditorComponent() != null)
+			lineTable.getEditorComponent().requestFocusInWindow();
 	}
 
 	/** Adds an auto line for the selected group, or a copy of the selected line */

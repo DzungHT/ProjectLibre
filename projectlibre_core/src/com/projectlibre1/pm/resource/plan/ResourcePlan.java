@@ -88,8 +88,9 @@ import com.projectlibre1.strings.Messages;
  * WBS (and the effort added for PM, QA...) before the deadline. See docs/resource-plan-design.md.
  * <p>
  * A <b>group</b> is a role and a required skill (DEV BE, DEV FE, BA...) with its effort: the work of the tasks of
- * the activities done by the role, at point 1.0. A <b>line</b> is a number of people of the same role, skill,
- * level, period and allocation. Its quantity is typed, or <b>auto</b>: what the group still needs. The lines are
+ * the activities done by the role, at point 1.0, and the people of exactly this role and skill. A <b>line</b> is a
+ * named person (an existing resource, or a new one named in the plan), or a number of TBD people of the same role,
+ * skill, level, period and allocation. Its quantity is typed, or <b>auto</b>: what the group still needs. The lines are
  * read from the resources of the project (existing ones, and the TBD ones of a previous plan, see
  * ResourcePlanWriter), so that the resources are the only place where the plan is kept.
  * <p>
@@ -111,8 +112,9 @@ public class ResourcePlan {
 		private double wbsHours = 0;
 		private double extraDays = 0;
 		private double capacityHours = 0;
-		private double people = 0;
-		private double existingPeople = 0; // the part of the people who are existing resources
+		private double sharedHours = 0; // + received from the people of other skills of the role, - given to them
+		private int people = 0;
+		private int namedPeople = 0; // the people who are named: existing resources or new named ones
 		/** How the capacity meets the effort, see checkBalance() */
 		public static final int OK = 0, WARNING = 1, FAILED = 2;
 		private int status = OK;
@@ -134,21 +136,30 @@ public class ResourcePlan {
 		public double getExtraHours() { return extraDays * NormalTask.HOURS_PER_MAN_DAY; }
 		/** WBS + added, man-hours */
 		public double getEffortHours() { return wbsHours + getExtraHours(); }
-		/** Capacity of the people of the lines, man-hours at point 1.0 */
+		/** Capacity of the people of the lines of exactly this role and skill, man-hours at point 1.0 */
 		public double getCapacityHours() { return capacityHours; }
-		/** People of the lines, with a part of the people shared with other skills (Fullstack...) */
-		public double getPeople() { return people; }
-		/** People of the lines who are existing resources */
-		public double getExistingPeople() { return existingPeople; }
+		/**
+		 * Capacity received from the people of the other skills of the role who can do this work (Fullstack for BE...),
+		 * positive, or given to the other skills, negative. See shareSurplus()
+		 */
+		public double getSharedHours() { return sharedHours; }
+		/** Capacity for the effort of the group: its own, plus what it receives, less what it gives */
+		public double getAvailableHours() { return capacityHours + sharedHours; }
+		/** People of the lines of exactly this role and skill */
+		public int getPeople() { return people; }
+		/** People of the lines who are named: existing resources, or new ones named in the plan */
+		public int getNamedPeople() { return namedPeople; }
 		/** OK, WARNING or FAILED: the gap between capacity and effort against the thresholds of the options */
 		public int getStatus() { return status; }
-		/** People of the lines to add (TBD) */
-		public double getNewPeople() { return people - existingPeople; }
-		/** Effort / capacity, 0 if there is neither */
+		/** People of the lines to add, not named yet (TBD) */
+		public int getNewPeople() { return people - namedPeople; }
+		/** Available capacity less effort, man-hours. Negative: people are missing */
+		public double getBalanceHours() { return getAvailableHours() - getEffortHours(); }
+		/** Effort / available capacity, 0 if there is neither */
 		public double getLoad() {
-			if (capacityHours <= EPSILON)
+			if (getAvailableHours() <= EPSILON)
 				return getEffortHours() > EPSILON ? Double.POSITIVE_INFINITY : 0;
-			return getEffortHours() / capacityHours;
+			return getEffortHours() / getAvailableHours();
 		}
 	}
 
@@ -163,6 +174,7 @@ public class ResourcePlan {
 		private double allocation = 1;
 		private int quantity = 0;
 		private boolean auto = false;
+		private String name = null; // a named person: the existing resource, or a new one typed in the plan
 		private final boolean existing;
 		private final List<ResourceImpl> resources = new ArrayList<ResourceImpl>();
 		// results of calculate()
@@ -214,10 +226,25 @@ public class ResourcePlan {
 		/** True if the period or the allocation were changed: the existing resources of the line get them */
 		public boolean isEdited() { return edited; }
 		public int getQuantity() { return quantity; }
-		public void setQuantity(int quantity) { this.quantity = Math.max(0, quantity); }
+		public void setQuantity(int quantity) { this.quantity = isNamed() ? 1 : Math.max(0, quantity); }
 		/** True if the quantity is what the group still needs */
 		public boolean isAuto() { return auto; }
-		public void setAuto(boolean auto) { this.auto = auto; }
+		public void setAuto(boolean auto) { this.auto = auto && !isNamed(); }
+		/** Name of the person of a named line, null for TBD people */
+		public String getName() { return name; }
+		/**
+		 * Makes the line a single named person, written as a named resource (not Generic) when the plan is applied. Null
+		 * makes it TBD people again
+		 */
+		public void setName(String name) {
+			this.name = name == null || name.trim().length() == 0 ? null : name.trim();
+			if (this.name != null) {
+				quantity = 1;
+				auto = false;
+			}
+		}
+		/** True for a single named person: an existing resource, or a new one typed in the plan */
+		public boolean isNamed() { return name != null; }
 		/** True for resources already in the team: kept as they are, only counted */
 		public boolean isExisting() { return existing; }
 		/** Resources read for this line, empty for a new line */
@@ -316,6 +343,8 @@ public class ResourcePlan {
 			values.put(prefix + "allocation", String.valueOf(line.allocation)); //$NON-NLS-1$
 			values.put(prefix + "quantity", String.valueOf(line.quantity)); //$NON-NLS-1$
 			values.put(prefix + "auto", String.valueOf(line.auto)); //$NON-NLS-1$
+			if (line.name != null && !line.existing)
+				values.put(prefix + "name", line.name); //$NON-NLS-1$
 			values.put(prefix + "customDates", String.valueOf(line.customDates)); //$NON-NLS-1$
 			values.put(prefix + "edited", String.valueOf(line.edited)); //$NON-NLS-1$
 			values.put(prefix + "openFrom", String.valueOf(line.openFrom)); //$NON-NLS-1$
@@ -373,26 +402,31 @@ public class ResourcePlan {
 			fields.put(rest.substring(dot + 1), entry.getValue());
 		}
 		for (Map<String, String> fields : saved.values()) {
-			Line line;
-			if (Boolean.parseBoolean(fields.get("existing"))) { //$NON-NLS-1$
-				line = findExisting(existing, fields.get("resources")); //$NON-NLS-1$
-				if (line == null)
-					continue; // its resources are no longer in the project
-			} else {
-				line = new Line(fields.get("role"), intValue(fields.get("level"), -1), false); //$NON-NLS-1$ //$NON-NLS-2$
+			List<Line> restored = new ArrayList<Line>();
+			String name = fields.get("name"); //$NON-NLS-1$
+			if (Boolean.parseBoolean(fields.get("existing"))) //$NON-NLS-1$
+				restored.addAll(findExisting(existing, fields.get("resources"))); // none if its resources are no longer in the project //$NON-NLS-1$
+			else if (name != null && findNamed(existing, name) != null)
+				restored.add(findNamed(existing, name)); // a named person of the version, created since by applying it
+			else {
+				Line line = new Line(fields.get("role"), intValue(fields.get("level"), -1), false); //$NON-NLS-1$ //$NON-NLS-2$
 				line.skill = fields.get("skill") == null ? "" : fields.get("skill"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				line.quantity = intValue(fields.get("quantity"), 0); //$NON-NLS-1$
 				line.auto = Boolean.parseBoolean(fields.get("auto")); //$NON-NLS-1$
+				line.setName(name);
 				lines.add(line);
+				restored.add(line);
 			}
-			line.allocation = doubleValue(fields.get("allocation"), line.allocation); //$NON-NLS-1$
-			line.customDates = Boolean.parseBoolean(fields.get("customDates")); //$NON-NLS-1$
-			line.edited = Boolean.parseBoolean(fields.get("edited")); //$NON-NLS-1$
-			line.openFrom = Boolean.parseBoolean(fields.get("openFrom")); //$NON-NLS-1$
-			line.openTo = Boolean.parseBoolean(fields.get("openTo")); //$NON-NLS-1$
-			if (line.customDates) {
-				line.from = longValue(fields.get("from"), line.from); //$NON-NLS-1$
-				line.to = longValue(fields.get("to"), line.to); //$NON-NLS-1$
+			for (Line line : restored) {
+				line.allocation = doubleValue(fields.get("allocation"), line.allocation); //$NON-NLS-1$
+				line.customDates = Boolean.parseBoolean(fields.get("customDates")); //$NON-NLS-1$
+				line.edited = Boolean.parseBoolean(fields.get("edited")); //$NON-NLS-1$
+				line.openFrom = Boolean.parseBoolean(fields.get("openFrom")); //$NON-NLS-1$
+				line.openTo = Boolean.parseBoolean(fields.get("openTo")); //$NON-NLS-1$
+				if (line.customDates) {
+					line.from = longValue(fields.get("from"), line.from); //$NON-NLS-1$
+					line.to = longValue(fields.get("to"), line.to); //$NON-NLS-1$
+				}
 			}
 		}
 		// the TBD resources already in the project go to the lines like them
@@ -400,25 +434,36 @@ public class ResourcePlan {
 			int level = LaborCatalog.parseLevel(resource.getLaborLevel());
 			String skill = resource.getSkills() == null ? "" : resource.getSkills(); //$NON-NLS-1$
 			for (Line line : lines)
-				if (!line.existing && line.role.equals(resource.getLaborRole()) && line.skill.equals(skill) && line.level == level) {
+				if (!line.existing && !line.isNamed() && line.role.equals(resource.getLaborRole()) && line.skill.equals(skill) && line.level == level) {
 					line.resources.add(resource);
 					break;
 				}
 		}
 	}
 
-	/** The existing line of exactly these resources (unique ids separated by commas), null if there is none */
-	private static Line findExisting(List<Line> existing, String ids) {
+	/**
+	 * The existing lines of these resources (unique ids separated by commas): one line per resource, a version can have
+	 * a line of several
+	 */
+	private static List<Line> findExisting(List<Line> existing, String ids) {
+		List<Line> found = new ArrayList<Line>();
 		if (ids == null)
-			return null;
+			return found;
 		Set<String> wanted = new HashSet<String>(Arrays.asList(ids.split(","))); //$NON-NLS-1$
-		for (Line line : existing) {
-			Set<String> have = new HashSet<String>();
+		for (Line line : existing)
 			for (ResourceImpl resource : line.resources)
-				have.add(String.valueOf(resource.getUniqueId()));
-			if (have.equals(wanted))
+				if (wanted.contains(String.valueOf(resource.getUniqueId()))) {
+					found.add(line);
+					break;
+				}
+		return found;
+	}
+
+	/** The line of the existing person of this name, null if there is none */
+	private static Line findNamed(List<Line> lines, String name) {
+		for (Line line : lines)
+			if (line.existing && line.name != null && line.name.equalsIgnoreCase(name))
 				return line;
-		}
 		return null;
 	}
 
@@ -554,8 +599,9 @@ public class ResourcePlan {
 	}
 
 	/**
-	 * The default order of the lines: the existing resources first, then by role (in the order of the catalog), skill,
-	 * level from the highest, and start. The user can change the order, it is kept in the versions
+	 * The default order of the lines: the existing resources first, then the new named people, then by role (in the
+	 * order of the catalog), skill, level from the highest, start and name. The user can change the order, it is kept in
+	 * the versions
 	 */
 	public void sortLines() {
 		final List<String> roles = LaborCatalog.getInstance().getRoles();
@@ -563,17 +609,24 @@ public class ResourcePlan {
 			public int compare(Line a, Line b) {
 				if (a.existing != b.existing)
 					return a.existing ? -1 : 1;
+				if (a.isNamed() != b.isNamed())
+					return a.isNamed() ? -1 : 1;
 				int c = compareRoles(roles, a.role, a.skill, b.role, b.skill);
 				if (c != 0)
 					return c;
 				if (a.level != b.level)
 					return a.level > b.level ? -1 : 1;
-				return a.from < b.from ? -1 : a.from > b.from ? 1 : 0;
+				if (a.from != b.from)
+					return a.from < b.from ? -1 : 1;
+				return a.isNamed() ? a.name.compareToIgnoreCase(b.name) : 0;
 			}
 		});
 	}
 
-	/** One line per role, skill, level, period, allocation and kind (existing or TBD) of the labor resources with a role */
+	/**
+	 * The labor resources with a role: one line per existing (named) resource, and one line per role, skill, level,
+	 * period and allocation of the TBD ones
+	 */
 	private void readResources() {
 		for (Object object : project.getResourcePool().getResourceList()) {
 			if (!(object instanceof ResourceImpl))
@@ -592,7 +645,7 @@ public class ResourcePlan {
 			boolean existing = !resource.isGeneric();
 			Line line = null;
 			for (Line l : lines)
-				if (l.existing == existing && l.role.equals(resource.getLaborRole()) && l.skill.equals(skill) && l.level == level
+				if (!existing && !l.existing && !l.isNamed() && l.role.equals(resource.getLaborRole()) && l.skill.equals(skill) && l.level == level
 						&& l.from == from && l.to == to && l.allocation == allocation) {
 					line = l;
 					break;
@@ -608,6 +661,8 @@ public class ResourcePlan {
 				long[] window = window(line.role);
 				line.customDates = existing || from != window[0] || to != window[1];
 				line.auto = !line.customDates && !existing && options.getAutoLines().contains(lineKey(line));
+				if (existing)
+					line.name = resource.getName() == null ? "" : resource.getName(); //$NON-NLS-1$
 				lines.add(line);
 			}
 			line.quantity++;
@@ -744,13 +799,13 @@ public class ResourcePlan {
 		errors.clear();
 		warnings.clear();
 		for (Line line : lines)
-			if (!covered(line))
-				group(line.role, line.skill); // a group without effort shows that the line is not needed
+			group(line.role, line.skill); // the people are counted in the group of exactly their role and skill
 		addDefaultLines();
 		for (Group group : groups) {
 			group.capacityHours = 0;
+			group.sharedHours = 0;
 			group.people = 0;
-			group.existingPeople = 0;
+			group.namedPeople = 0;
 		}
 		for (Line line : lines) {
 			if (!line.customDates) {
@@ -772,50 +827,46 @@ public class ResourcePlan {
 			if (line.to <= line.from)
 				errors.add(MessageFormat.format(Messages.getString("ResourcePlan.EmptyPeriod"), lineName(line))); //$NON-NLS-1$
 		}
-		// the people of the typed lines: lines of a single group first, then the ones shared by several groups
+		// the people of the typed lines, in the group of their role and skill
 		for (Line line : lines) {
-			Group group = exactGroup(line);
-			if (!line.auto && group != null) {
-				group.capacityHours += line.people * line.perPerson;
-				group.people += line.people;
-				if (line.existing)
-					group.existingPeople += line.people;
-			}
+			if (line.auto)
+				continue;
+			Group group = findGroup(line.role, line.skill);
+			group.capacityHours += line.people * line.perPerson;
+			group.people += line.people;
+			if (line.isNamed())
+				group.namedPeople += line.people;
 		}
-		for (Line line : lines)
-			if (!line.auto && exactGroup(line) == null)
-				share(line);
-		// then the auto lines take what is missing
+		// the people with more capacity than the effort of their skill do what the other skills miss
+		shareSurplus();
+		// then the auto lines take what is still missing
 		for (Group group : groups) {
 			Line auto = null;
 			for (Line line : lines)
-				if (line.auto && exactGroup(line) == group) {
+				if (line.auto && findGroup(line.role, line.skill) == group) {
 					if (auto == null)
 						auto = line;
 					else
 						warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.SeveralAuto"), group.getKey())); //$NON-NLS-1$
 				}
-			double missing = group.getEffortHours() - group.capacityHours;
+			double missing = group.getEffortHours() - group.getAvailableHours();
 			if (auto != null && missing > EPSILON) {
 				if (auto.perPerson <= EPSILON)
 					errors.add(MessageFormat.format(Messages.getString("ResourcePlan.NoCapacity"), lineName(auto))); //$NON-NLS-1$
 				else {
 					auto.fte = missing / auto.perPerson;
 					// the fewest people giving a load not over 100% + the shortage accepted without a warning
-					double needed = group.getEffortHours() / (1 + options.getShortageWarning() / 100.0) - group.capacityHours;
+					double needed = group.getEffortHours() / (1 + options.getShortageWarning() / 100.0) - group.getAvailableHours();
 					auto.people = needed <= EPSILON ? 0 : (int) Math.ceil(needed / auto.perPerson - EPSILON);
 					group.capacityHours += auto.people * auto.perPerson;
 					group.people += auto.people;
 				}
 			}
 			checkBalance(group);
-			if (group.people > options.getMaxPeople() + EPSILON)
+			if (group.people > options.getMaxPeople())
 				errors.add(MessageFormat.format(Messages.getString("ResourcePlan.TooManyPeople"), group.getKey(), //$NON-NLS-1$
-						format(group.people), String.valueOf(options.getMaxPeople())));
+						String.valueOf(group.people), String.valueOf(options.getMaxPeople())));
 		}
-		for (Line line : lines)
-			if (line.auto && exactGroup(line) == null)
-				warnings.add(MessageFormat.format(Messages.getString("ResourcePlan.AutoShared"), lineName(line))); //$NON-NLS-1$
 		calculateEarliestEnd();
 	}
 
@@ -826,7 +877,7 @@ public class ResourcePlan {
 	 */
 	private void checkBalance(Group group) {
 		group.status = Group.OK;
-		double effort = group.getEffortHours(), capacity = group.capacityHours;
+		double effort = group.getEffortHours(), capacity = group.getAvailableHours();
 		if (effort <= EPSILON) {
 			if (capacity > EPSILON) {
 				group.status = Group.WARNING;
@@ -863,43 +914,40 @@ public class ResourcePlan {
 		}
 	}
 
-	/** Group of the role and skill of a line, null if the line can do the tasks of several groups (or none) */
-	private Group exactGroup(Line line) {
-		Group group = findGroup(line.role, line.skill);
-		if (group == null)
-			return null;
-		for (Group other : groups)
-			if (other != group && covers(line, other) && line.skill.length() == 0)
-				return null; // a developer without skill can do any development
-		return group;
-	}
-
-	private boolean covered(Line line) {
-		for (Group group : groups)
-			if (covers(line, group))
-				return true;
-		return false;
-	}
-
-	/** Shares the capacity of a line between the groups it can do, in proportion of what they miss */
-	private void share(Line line) {
-		List<Group> covered = new ArrayList<Group>();
-		double missing = 0;
-		for (Group group : groups)
-			if (covers(line, group)) {
-				covered.add(group);
-				missing += Math.max(0, group.getEffortHours() - group.capacityHours);
+	/**
+	 * The people of a group are counted in it only, never split between groups. The capacity a group has over its
+	 * effort (Fullstack, DEV without skill...) does what the other groups of the role it can do miss, in proportion of
+	 * what they miss: it is shown as capacity given and received, not as people
+	 */
+	private void shareSurplus() {
+		for (Group giver : groups) {
+			double surplus = giver.getAvailableHours() - giver.getEffortHours();
+			if (surplus <= EPSILON)
+				continue;
+			List<Group> takers = new ArrayList<Group>();
+			double missing = 0;
+			for (Group taker : groups) {
+				double m = taker.getEffortHours() - taker.getAvailableHours();
+				if (taker != giver && m > EPSILON && canDo(giver, taker)) {
+					takers.add(taker);
+					missing += m;
+				}
 			}
-		if (covered.isEmpty())
-			return;
-		double capacity = line.people * line.perPerson;
-		for (Group group : covered) {
-			double part = missing <= EPSILON ? 1.0 / covered.size() : Math.max(0, group.getEffortHours() - group.capacityHours) / missing;
-			group.capacityHours += capacity * part;
-			group.people += line.people * part;
-			if (line.existing)
-				group.existingPeople += line.people * part;
+			if (takers.isEmpty())
+				continue;
+			double given = Math.min(surplus, missing);
+			for (Group taker : takers) {
+				double part = given * (taker.getEffortHours() - taker.getAvailableHours()) / missing;
+				taker.sharedHours += part;
+				giver.sharedHours -= part;
+			}
 		}
+	}
+
+	/** True if the people of a group can do the tasks of another: same role, and the skill if the other needs one */
+	private static boolean canDo(Group giver, Group taker) {
+		return giver.role.equalsIgnoreCase(taker.role)
+				&& (giver.skill.length() == 0 || SkillCatalog.getInstance().canDo(giver.skill, taker.skill));
 	}
 
 	/**
@@ -970,12 +1018,50 @@ public class ResourcePlan {
 			people += line.people;
 		return people;
 	}
+	/** People not named yet (TBD) */
 	public int getNewPeople() {
 		int people = 0;
 		for (Line line : lines)
-			if (!line.existing)
+			if (!line.isNamed())
 				people += line.people;
 		return people;
+	}
+
+	/**
+	 * Names of the labor resources of the project without a role, so not in the plan: a named line of one of them
+	 * gives it the role, level, skill and period of the line when the plan is applied, see ResourcePlanWriter
+	 */
+	public List<String> getUnplannedNames() {
+		List<String> names = new ArrayList<String>();
+		for (Object object : project.getResourcePool().getResourceList())
+			if (isUnplanned(object) && !isNameUsed(((ResourceImpl) object).getName(), null))
+				names.add(((ResourceImpl) object).getName());
+		return names;
+	}
+
+	/** A labor resource, named, without a role */
+	static boolean isUnplanned(Object object) {
+		if (!(object instanceof ResourceImpl))
+			return false;
+		ResourceImpl resource = (ResourceImpl) object;
+		return resource.isLabor() && !resource.isGeneric() && resource.getLaborRole() == null && resource.getName() != null
+				&& resource.getName().trim().length() > 0;
+	}
+
+	/**
+	 * True if a name cannot be given to a named line: it is the name of another line, or of a resource of the project
+	 * that is in the plan or is not a named labor resource
+	 */
+	public boolean isNameUsed(String name, Line except) {
+		if (name == null)
+			return false;
+		for (Line line : lines)
+			if (line != except && line.name != null && line.name.equalsIgnoreCase(name.trim()))
+				return true;
+		for (Object object : project.getResourcePool().getResourceList())
+			if (object instanceof ResourceImpl && name.trim().equalsIgnoreCase(((ResourceImpl) object).getName()) && !isUnplanned(object))
+				return true;
+		return false;
 	}
 	public double getTotalManMonths() {
 		double mm = 0;

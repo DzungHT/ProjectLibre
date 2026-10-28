@@ -68,8 +68,12 @@ Một **dòng** = một nhóm người giống nhau:
 
 - **Số lượng** nhập tay, hoặc **auto**: mỗi nhóm role/kỹ năng có tối đa một dòng auto, dòng đó lấp phần effort còn thiếu.
   Mặc định mỗi role/kỹ năng có một dòng auto ở level chuẩn (BA L2, DEV L2, TESTER L2).
-- **Nguồn = Hiện có** (named resource): resource đã có trong dự án (T&M), không đổi số lượng, chỉ tính vào năng lực. Các dòng còn lại là
-  **dự kiến (TBD)** (generic resource) → kết quả "cần thêm bao nhiêu, trong bao lâu".
+- **Nguồn = Hiện có** (named resource): resource đã có trong dự án (T&M), mỗi resource một dòng, không đổi số lượng, chỉ
+  tính vào năng lực. Cột **Resource Name** hiện tên người.
+- **Nguồn = Có tên (mới)**: nhập tên ở cột Resource Name (hoặc nút *Thêm named resource*) → dòng thành **một người có tên**.
+  Áp dụng thì tạo named resource (không Generic) với role, level, kỹ năng, khoảng thời gian của dòng; nếu dự án đã có
+  resource cùng tên **chưa có role** thì gán vào resource đó. Xoá tên thì dòng trở lại dự kiến.
+- Các dòng còn lại là **dự kiến (TBD)** (generic resource) → kết quả "cần thêm bao nhiêu, trong bao lâu".
 
 ## 4. Cách tính (theo năng lực, không xếp lịch)
 
@@ -83,6 +87,10 @@ số lượng dòng auto = ceil( (effort − năng lực các dòng khác) / (po
 - Giờ làm việc tính theo **lịch dự án** (bỏ ngày nghỉ, lễ).
 - **Hệ số sử dụng** (mặc định 85%, cấu hình): không ai làm 100% thời gian, và còn thời gian chờ việc giữa các khâu.
 - Hiển thị cho mỗi nhóm: effort, năng lực, **FTE cần** (số lẻ, ví dụ 4.34), số người (làm tròn), % tải thực tế.
+- Bảng cung – cầu tổng hợp **đúng role và kỹ năng** của người: 2 DEV Fullstack là 2 người ở dòng DEV Fullstack, không
+  chia thành 1 BE + 1 FE. Năng lực thừa của một nhóm (Fullstack, DEV không kỹ năng) được chuyển sang các nhóm cùng role
+  mà nó làm được và đang thiếu, chia theo phần thiếu, hiện ở cột **Hỗ trợ chéo** (+ nhận, − cho), trước khi tính dòng
+  auto. Chênh lệch = năng lực + hỗ trợ chéo − effort.
 
 Ví dụ: BA effort 400 MD = 3 200 giờ, khoảng 3 tháng = 66 ngày = 528 giờ, hệ số 100%:
 1 BA M (1.59) = 839.5 giờ; còn 2 360.5 giờ / (1.03 × 528 = 543.8) = 4.34 → **5 BA J**, tải 87%.
@@ -137,7 +145,8 @@ role/kỹ năng: tải 117% là thiếu 17%, tải 80% là thừa 20%.
 
 - Apply: mỗi người của dòng dự kiến thành một resource **Generic (TBD)**, tên `BA J #3 (TBD)`, role, level, kỹ năng như
   dòng, Availability: 0% trước *Từ*, `point × %` trong [Từ, Đến], 0% sau *Đến* (field gốc, P1 đã hỗ trợ nhiều khoảng).
-- Mở lại hộp thoại: đọc các resource có role, **gom** theo (role, kỹ năng, level, từ, đến, %, TBD hay có sẵn) → các dòng.
+- Mở lại hộp thoại: đọc các resource có role: mỗi resource có sẵn một dòng; resource TBD **gom** theo (role, kỹ năng,
+  level, từ, đến, %) → các dòng.
 - Apply lại: các resource TBD **chưa có phân công** được xoá và tạo lại theo các dòng (đánh số lại #1, #2...).
   Resource TBD đã có phân công được giữ, tính vào số lượng của dòng cùng nhóm; nếu dòng đó không còn hoặc ít người hơn thì
   báo cảnh báo, không xoá.

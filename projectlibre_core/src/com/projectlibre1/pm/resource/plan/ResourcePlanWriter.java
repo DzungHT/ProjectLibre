@@ -77,9 +77,10 @@ import com.projectlibre1.pm.task.Project;
 import com.projectlibre1.strings.Messages;
 
 /**
- * Writes a Resource Plan in the project. The people of the lines that are not existing resources become Generic
- * (TBD) resources named like "DEV BE J #2 (TBD)", with the role, level and skill of their line, and Max Units of
- * point × allocation in the period of the line, 0% before and after. The TBD resources of the previous plan
+ * Writes a Resource Plan in the project. The people of the TBD lines become Generic (TBD) resources named like
+ * "DEV BE J #2 (TBD)", with the role, level and skill of their line, and Max Units of point × allocation in the period
+ * of the line, 0% before and after. A new named person becomes a named resource the same way, or gives them to the
+ * resource of the project of this name without a role. The TBD resources of the previous plan
  * without assignments are replaced; the ones with assignments are kept and counted in their line. The existing
  * resources only get the period and allocation of their line when they were changed in the plan (this change
  * of their availability cannot be undone). The options are saved in the project. A single undo step.
@@ -141,6 +142,16 @@ public class ResourcePlanWriter {
 			for (ResourcePlan.Line line : plan.getLines()) {
 				if (line.isExisting())
 					continue;
+				if (line.isNamed()) {
+					ResourceImpl unplanned = findUnplanned(project, line.getName());
+					if (unplanned == null)
+						newNodes.add(createResource(project, line, line.getName()));
+					else {
+						setLabor(unplanned, line);
+						project.getResourcePool().fireUpdateEvent(ResourcePlanWriter.class, unplanned);
+					}
+					continue;
+				}
 				int number = 0;
 				for (int i = kept.get(line); i < line.getPeople(); i++) {
 					String name;
@@ -221,18 +232,32 @@ public class ResourcePlanWriter {
 		return name.append(TBD).toString();
 	}
 
+	/** The labor resource of the project of this name without a role, see ResourcePlan.getUnplannedNames(). Null if none */
+	private static ResourceImpl findUnplanned(Project project, String name) {
+		for (Object object : project.getResourcePool().getResourceList())
+			if (ResourcePlan.isUnplanned(object) && ((ResourceImpl) object).getName().trim().equalsIgnoreCase(name))
+				return (ResourceImpl) object;
+		return null;
+	}
+
+	/** A resource for a named line (not Generic), or for a person of a TBD line */
 	private static Node createResource(Project project, ResourcePlan.Line line, String name) throws Exception {
 		Node node = NodeFactory.getInstance().createResource(project.getResourcePool());
 		ResourceImpl resource = (ResourceImpl) node.getImpl();
 		resource.setName(name);
-		resource.setGeneric(true);
+		resource.setGeneric(!line.isNamed());
+		setLabor(resource, line);
+		return node;
+	}
+
+	/** Gives the role, level, skill and period of a line to a resource */
+	private static void setLabor(ResourceImpl resource, ResourcePlan.Line line) throws Exception {
 		resource.setLaborRole(line.getRole());
 		if (line.getLevel() >= 0)
 			resource.setLaborLevel(String.valueOf(line.getLevel()));
 		if (line.getSkill().length() > 0)
 			resource.setSkills(line.getSkill());
 		setAvailability(resource, line); // after the role and level, which scale the default period by the point
-		return node;
 	}
 
 	/**
