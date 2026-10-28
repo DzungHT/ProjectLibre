@@ -260,9 +260,12 @@ public class Serializer {
 
 						if (flatAssignments==null) assignmentData.setTask(taskData);
 						else assignmentData.setTaskId(taskData.getUniqueId());
-						EnterpriseResourceData enterpriseResourceData=(r.isDefault())?
+						ResourceData resourceData=(r.isDefault())?null:(ResourceData)resourceMap.get(new Long(r.getUniqueId()));
+						if (!r.isDefault()&&resourceData==null) // resource no longer in the project: saved unassigned, its work is kept
+							System.err.println("Assignment of "+task.getName()+" to a resource not in the project: "+r.getName()+" ("+r.getUniqueId()+"), saved unassigned"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+						EnterpriseResourceData enterpriseResourceData=(resourceData==null)?
 						    	null:
-						    		((ResourceData)resourceMap.get(new Long(r.getUniqueId()))).getEnterpriseResource();
+						    		resourceData.getEnterpriseResource();
 						if (flatAssignments==null) assignmentData.setResource(enterpriseResourceData);
 						else assignmentData.setResourceId((enterpriseResourceData==null)?-1L:enterpriseResourceData.getUniqueId());
 						assignmentData.setSnapshotId(s);

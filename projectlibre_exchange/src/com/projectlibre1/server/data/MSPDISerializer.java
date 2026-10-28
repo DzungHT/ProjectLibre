@@ -143,7 +143,11 @@ public class MSPDISerializer implements ProjectSerializer {
                         ResourceImpl r=(ResourceImpl)assignment.getResource();
                         if (s!=Snapshottable.CURRENT.intValue()) continue;
                         net.sf.mpxj.Resource resourceData=(net.sf.mpxj.Resource)resourceMap.get(r);
-                        
+                        if (resourceData==null){ // resource no longer in the project: saved unassigned, its work is kept
+                        	System.err.println("Assignment of "+task.getName()+" to a resource not in the project: "+r.getName()+" ("+r.getUniqueId()+"), saved unassigned"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$
+                        	resourceData=(net.sf.mpxj.Resource)resourceMap.get(ResourceImpl.getUnassignedInstance());
+                        }
+
                         ResourceAssignment assignmentData=taskData.addResourceAssignment(resourceData);
                  
                         
