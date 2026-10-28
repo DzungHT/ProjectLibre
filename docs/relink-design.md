@@ -22,7 +22,7 @@
 
 | Loại | Ý nghĩa | Phần của Auto Link |
 |---|---|---|
-| Logic | GP → PT → KT trong một chức năng/dòng; link làm tay | *Link giữa các hạng mục* |
+| Logic | Theo quy tắc nguồn → đích (mặc định GP → PT cùng dòng = cấp N, PT → KT cùng chức năng = cấp N-1; tính theo cha của task đích nên WBS thêm cấp vẫn đúng); link làm tay | *Link giữa các hạng mục* |
 | Nguồn lực | Task trước → task sau **của cùng một người** | *Link nối tiếp các công việc của mỗi người* |
 
 Phần chuỗi của Auto Link đổi như sau:

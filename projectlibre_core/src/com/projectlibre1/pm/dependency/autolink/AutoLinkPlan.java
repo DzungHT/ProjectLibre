@@ -62,6 +62,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -178,38 +179,54 @@ public class AutoLinkPlan {
 		circularTasks = findCircularTasks(project);
 	}
 
-	/** Each task after the tasks of the previous activity in its group, see AutoLinkOptions */
+	/** Each task after the tasks of the source activity of its rules in its group, see AutoLinkOptions */
 	private static void linkActivities(List<NormalTask> linked, AutoLinkOptions options, Map<NormalTask, Set<NormalTask>> wanted) {
-		int count = options.getActivities().length;
-		// tasks of each activity, by group, for each scope used
-		Map<Integer, Map<Task, List<NormalTask>[]>> groupsByScope = new HashMap<Integer, Map<Task, List<NormalTask>[]>>();
-		for (int a = 1; a < count; a++)
-			groupsByScope.put(options.getScope(a), new IdentityHashMap<Task, List<NormalTask>[]>());
-		for (Map.Entry<Integer, Map<Task, List<NormalTask>[]>> entry : groupsByScope.entrySet()) {
-			for (NormalTask task : linked) {
-				Task group = ancestor(task, entry.getKey());
-				List<NormalTask>[] byActivity = entry.getValue().get(group);
+		String[] activities = options.getActivities();
+		// tasks of each activity below each summary, at any depth, in the order of the WBS
+		Map<Task, Map<String, List<NormalTask>>> below = new IdentityHashMap<Task, Map<String, List<NormalTask>>>();
+		for (NormalTask task : linked) {
+			String activity = activities[options.activityIndex(task)];
+			for (Task parent = task.getWbsParentTask(); parent != null; parent = parent.getWbsParentTask()) {
+				Map<String, List<NormalTask>> byActivity = below.get(parent);
 				if (byActivity == null) {
-					byActivity = new List[count];
-					entry.getValue().put(group, byActivity);
+					byActivity = new HashMap<String, List<NormalTask>>();
+					below.put(parent, byActivity);
 				}
-				int a = options.activityIndex(task);
-				if (byActivity[a] == null)
-					byActivity[a] = new ArrayList<NormalTask>();
-				byActivity[a].add(task);
+				List<NormalTask> list = byActivity.get(activity);
+				if (list == null) {
+					list = new ArrayList<NormalTask>();
+					byActivity.put(activity, list);
+				}
+				list.add(task);
 			}
 		}
 		for (NormalTask task : linked) {
-			int a = options.activityIndex(task);
-			if (a == 0)
-				continue;
-			List<NormalTask>[] byActivity = groupsByScope.get(options.getScope(a)).get(ancestor(task, options.getScope(a)));
-			for (int previous = a - 1; previous >= 0; previous--) {
-				if (byActivity[previous] == null)
+			String activity = activities[options.activityIndex(task)];
+			for (AutoLinkOptions.Rule rule : options.getRules()) {
+				if (!rule.getTo().equals(activity))
 					continue;
-				for (NormalTask predecessor : byActivity[previous])
-					want(predecessor, task, wanted);
-				break;
+				Map<String, List<NormalTask>> byActivity = below.get(ancestor(task, rule.getLevels()));
+				if (byActivity == null)
+					continue;
+				// the source activity, else the activities linked before it by the rules, step by step
+				Set<String> sources = Collections.singleton(rule.getFrom());
+				Set<String> seen = new HashSet<String>(Arrays.asList(activity, rule.getFrom()));
+				while (!sources.isEmpty()) {
+					boolean found = false;
+					for (String source : sources)
+						if (byActivity.containsKey(source)) {
+							found = true;
+							for (NormalTask predecessor : byActivity.get(source))
+								want(predecessor, task, wanted);
+						}
+					if (found)
+						break;
+					Set<String> before = new LinkedHashSet<String>();
+					for (AutoLinkOptions.Rule previous : options.getRules())
+						if (sources.contains(previous.getTo()) && seen.add(previous.getFrom()))
+							before.add(previous.getFrom());
+					sources = before;
+				}
 			}
 		}
 	}
@@ -338,7 +355,7 @@ public class AutoLinkPlan {
 		predecessors.add(predecessor);
 	}
 
-	/** Group of a task: its parent for ROW, the parent of its parent for FUNCTION. The highest task if there is none */
+	/** Group of a task: its parent for PARENT, the parent of its parent for GRANDPARENT. The highest task if there is none */
 	private static Task ancestor(Task task, int levels) {
 		Task group = task;
 		for (int l = 0; l < levels; l++) {

@@ -55,20 +55,23 @@
  *******************************************************************************/
 package com.projectlibre1.pm.dependency.autolink;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import com.projectlibre1.grouping.core.transform.filtering.TaskNameFilter;
 import com.projectlibre1.pm.task.NormalTask;
 
 /**
- * What Auto Link links. The activities (activity codes of the tasks, like GP, PT, KT) are in their order of work.
+ * What Auto Link links. The activities are the activity codes of the tasks, like GP, PT, KT.
  * <ul>
- * <li>Activities: each task of an activity is linked after the tasks of the previous activity found in the same
- * group, a row (the parent of the task) or a function (the parent of the row), chosen for each pair of activities.
- * When there is none, the activity before is used, and so on</li>
+ * <li>Activities: rules say which activity is linked after which one. Each task of the target activity of a rule
+ * is linked after the tasks of its source activity found in the same group: below the parent of the task (level N)
+ * or below the parent of its parent (level N-1), at any depth, so that a WBS with more levels is linked the same
+ * way. When there is none, the activities linked before the source by the other rules are used, and so on</li>
  * <li>Sequences (docs/relink-design.md): the tasks of each person are linked one after the other, whatever their
  * activity, in the order they can start or in the order of the WBS. The tasks not assigned make one sequence per
  * activity, or per activity and lane for the lane activities (the development tasks of BE, FE, Mobile...), or
@@ -79,12 +82,68 @@ import com.projectlibre1.pm.task.NormalTask;
  * The activity of a task is its activity code, or found from its name, see activityIndex().
  */
 public class AutoLinkOptions {
-	/** Groups of the tasks linked between activities: number of levels above the task */
-	public static final int ROW = 1;
-	public static final int FUNCTION = 2;
+	/** Groups of the tasks linked between activities: number of levels above the target task */
+	public static final int PARENT = 1; // level N
+	public static final int GRANDPARENT = 2; // level N-1
+
+	/** The tasks of an activity linked after the tasks of another one in the same group */
+	public static class Rule {
+		private static final String ARROW = ">", LEVELS = ":", SEPARATOR = ","; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		private final String from;
+		private final String to;
+		private final int levels;
+
+		public Rule(String from, String to, int levels) {
+			this.from = from;
+			this.to = to;
+			this.levels = levels;
+		}
+		public String getFrom() {
+			return from;
+		}
+		public String getTo() {
+			return to;
+		}
+		/** PARENT or GRANDPARENT */
+		public int getLevels() {
+			return levels;
+		}
+		/** The rules as text, like GP>PT:1,PT>KT:2 */
+		public static String format(List<Rule> rules) {
+			StringBuilder text = new StringBuilder();
+			for (Rule rule : rules) {
+				if (text.length() > 0)
+					text.append(SEPARATOR);
+				text.append(rule.from).append(ARROW).append(rule.to).append(LEVELS).append(rule.levels);
+			}
+			return text.toString();
+		}
+		/** The rules written by format(), null if there is no text or it is not valid */
+		public static List<Rule> parse(String text) {
+			if (text == null)
+				return null;
+			List<Rule> rules = new ArrayList<Rule>();
+			if (text.trim().length() == 0)
+				return rules;
+			for (String item : text.split(SEPARATOR)) {
+				int arrow = item.indexOf(ARROW);
+				int levels = item.lastIndexOf(LEVELS);
+				if (arrow <= 0 || levels <= arrow + 1)
+					return null;
+				try {
+					int value = Integer.parseInt(item.substring(levels + 1).trim());
+					rules.add(new Rule(item.substring(0, arrow).trim(), item.substring(arrow + 1, levels).trim(),
+							value == GRANDPARENT ? GRANDPARENT : PARENT));
+				} catch (NumberFormatException e) {
+					return null;
+				}
+			}
+			return rules;
+		}
+	}
 
 	private final String[] activities;
-	private final int[] scopes; // scopes[i]: group of the link from activities[i] to activities[i + 1]
+	private final List<Rule> rules;
 	private final Set<String> laneActivities;
 	private boolean linkActivities = true;
 	private boolean linkSequences = true;
@@ -93,16 +152,38 @@ public class AutoLinkOptions {
 	private boolean joinConstraints = true;
 	private String[] normalizedNames = null;
 
-	public AutoLinkOptions(String[] activities, int[] scopes, String[] laneActivities) {
-		if (scopes.length != activities.length - 1)
-			throw new IllegalArgumentException("One scope for each pair of activities"); //$NON-NLS-1$
-		this.activities = activities;
-		this.scopes = scopes;
+	/**
+	 * @param activities the activity codes linked; the codes of the rules are added
+	 * @param rules the rules between activities; the ones from an activity to itself are ignored
+	 */
+	public AutoLinkOptions(String[] activities, List<Rule> rules, String[] laneActivities) {
+		List<String> codes = new ArrayList<String>(Arrays.asList(activities));
+		this.rules = new ArrayList<Rule>();
+		for (Rule rule : rules) {
+			if (rule.getFrom().equals(rule.getTo()))
+				continue;
+			this.rules.add(rule);
+			for (String code : new String[] { rule.getFrom(), rule.getTo() })
+				if (!codes.contains(code))
+					codes.add(code);
+		}
+		this.activities = codes.toArray(new String[codes.size()]);
 		this.laneActivities = Collections.unmodifiableSet(new HashSet<String>(Arrays.asList(laneActivities)));
+	}
+
+	/** The rules of before: each activity after the previous one, in the same row first, then in the same function */
+	public static List<Rule> defaultRules(String[] activities) {
+		List<Rule> rules = new ArrayList<Rule>();
+		for (int i = 1; i < activities.length; i++)
+			rules.add(new Rule(activities[i - 1], activities[i], i == 1 ? PARENT : GRANDPARENT));
+		return rules;
 	}
 
 	public String[] getActivities() {
 		return activities;
+	}
+	public List<Rule> getRules() {
+		return Collections.unmodifiableList(rules);
 	}
 	/** Index of an activity code, -1 if it is not linked */
 	public int indexOf(String activity) {
@@ -110,13 +191,6 @@ public class AutoLinkOptions {
 			if (activities[i].equals(activity))
 				return i;
 		return -1;
-	}
-	/** Group of the link from the activity at index - 1 to the one at index */
-	public int getScope(int index) {
-		return scopes[index - 1];
-	}
-	public void setScope(int index, int scope) {
-		scopes[index - 1] = scope;
 	}
 	/**
 	 * Index of the activity of a task, -1 if it has none or it is not linked. Without activity code, a leaf task
