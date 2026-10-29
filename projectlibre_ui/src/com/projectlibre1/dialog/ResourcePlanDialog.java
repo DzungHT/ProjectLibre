@@ -458,8 +458,11 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		applyButton.setFont(applyButton.getFont().deriveFont(Font.BOLD));
 		panel.add(Box.createHorizontalStrut(10));
 		panel.add(applyButton);
-		panel.add(versionStatus);
-		return panel;
+		// the status on its own line, wrapping: its text changes at each edit, beside the buttons it widened the dialog
+		JPanel bar = new JPanel(new BorderLayout(0, 4));
+		bar.add(panel, BorderLayout.CENTER);
+		bar.add(versionStatus, BorderLayout.SOUTH);
+		return bar;
 	}
 
 	private static JButton button(String key, ActionListener listener) {
@@ -581,7 +584,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	private void showVersionStatus() {
 		if (versionStatus == null)
 			return;
-		StringBuilder text = new StringBuilder("<html>"); //$NON-NLS-1$
+		StringBuilder text = new StringBuilder();
 		if (version == null)
 			text.append(Messages.getString("ResourcePlan.ResourcesPlanStatus")); //$NON-NLS-1$
 		else {
@@ -596,7 +599,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		}
 		if (isChanged())
 			text.append(" &middot; <font color='red'>").append(Messages.getString("ResourcePlan.Unsaved")).append("</font>"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-		versionStatus.setText(text.append("</html>").toString()); //$NON-NLS-1$
+		versionStatus.setText(WrappedText.html(text.toString(), HELP_WIDTH));
 	}
 
 	public JComponent createContentPanel() {
