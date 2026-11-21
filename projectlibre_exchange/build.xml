@@ -100,6 +100,9 @@
 
 	
 	<target name="build" depends="prepare,core">
+		<copy todir="${build}">
+			<fileset dir="${src}" includes="**/*.xlsx" />
+		</copy>
 		<javac destdir="${build}"
 			classpathref="compile.class.path"
 			debug="off"

@@ -70,6 +70,8 @@ import java.awt.event.FocusEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.IOException;
 import java.text.DateFormat;
 import java.text.MessageFormat;
 import java.text.NumberFormat;
@@ -91,6 +93,7 @@ import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
+import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JOptionPane;
@@ -120,6 +123,7 @@ import net.sf.nachocalendar.components.DateField;
 import com.jgoodies.forms.builder.DefaultFormBuilder;
 import com.jgoodies.forms.layout.FormLayout;
 import com.projectlibre1.options.EditOption;
+import com.projectlibre1.exchange.wbsexcel.ResourcePlanExcelExporter;
 import com.projectlibre1.pm.graphic.frames.GraphicManager;
 import com.projectlibre1.pm.resource.labor.LaborCatalog;
 import com.projectlibre1.pm.resource.labor.SkillCatalog;
@@ -158,6 +162,7 @@ public final class ResourcePlanDialog extends AbstractDialog {
 	private static final String[] UNITS = { "MH", "MD", "MM" }; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 	private static final double[] UNIT_HOURS = { 1, NormalTask.HOURS_PER_MAN_DAY, NormalTask.HOURS_PER_MAN_DAY * NormalTask.MAN_DAYS_PER_MAN_MONTH };
 	private static final String UNIT = "resourcePlan.unit"; //$NON-NLS-1$
+	private static final String EXPORT_DIRECTORY = "resourcePlan.exportDirectory"; //$NON-NLS-1$
 	private static final int DEFAULT_UNIT = 1;
 
 	private static final long DAY = 24L * 60 * 60 * 1000;
@@ -465,6 +470,47 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		return bar;
 	}
 
+	/** Exports the plan in view without saving the version or changing project resources. */
+	private void exportPeople() {
+		update();
+		Preferences preferences = null;
+		String directory = System.getProperty("user.home"); //$NON-NLS-1$
+		try {
+			preferences = Preferences.userNodeForPackage(ResourcePlanDialog.class);
+			directory = preferences.get(EXPORT_DIRECTORY, directory);
+		} catch (Exception e) { // preferences may be unavailable
+		}
+		String name = project.getName();
+		name = name == null || name.trim().length() == 0 ? "Resource Plan" //$NON-NLS-1$
+				: name.trim().replaceAll("[\\\\/:*?\"<>|]", "_") + " - Resource Plan"; //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+		JFileChooser chooser = new JFileChooser();
+		chooser.putClientProperty("FileChooser.useShellFolder", Boolean.FALSE); //$NON-NLS-1$
+		chooser.setFileFilter(ExportWbsExcelDialog.xlsxFilter());
+		chooser.setSelectedFile(new File(directory, name + ".xlsx")); //$NON-NLS-1$
+		if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION)
+			return;
+		File file = chooser.getSelectedFile();
+		if (!file.getName().toLowerCase().endsWith(".xlsx")) //$NON-NLS-1$
+			file = new File(file.getParentFile(), file.getName() + ".xlsx"); //$NON-NLS-1$
+		if (file.exists() && JOptionPane.showConfirmDialog(this,
+				MessageFormat.format(Messages.getString("ExportWbsExcelDialog.Overwrite"), file.getName()), //$NON-NLS-1$
+				getTitle(), JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
+			return;
+		try {
+			ResourcePlanExcelExporter.export(plan, file);
+		} catch (IOException e) {
+			JOptionPane.showMessageDialog(this,
+					MessageFormat.format(Messages.getString("ExportWbsExcelDialog.WriteError"), file.getName(), e.getMessage()), //$NON-NLS-1$
+					getTitle(), JOptionPane.ERROR_MESSAGE);
+			return;
+		}
+		if (preferences != null && file.getParentFile() != null)
+			preferences.put(EXPORT_DIRECTORY, file.getParentFile().getAbsolutePath());
+		JOptionPane.showMessageDialog(this,
+				MessageFormat.format(Messages.getString("ResourcePlan.Exported"), file.getAbsolutePath()), //$NON-NLS-1$
+				getTitle(), JOptionPane.INFORMATION_MESSAGE);
+	}
+
 	private static JButton button(String key, ActionListener listener) {
 		JButton button = new JButton(Messages.getString(key));
 		button.setToolTipText(Messages.getString(key + "Tooltip")); //$NON-NLS-1$
@@ -545,6 +591,19 @@ public final class ResourcePlanDialog extends AbstractDialog {
 				JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION)
 			return;
 		loadVersion(version);
+	}
+
+	/**
+	 * Reads again the tasks and the resources of the project, changed since the dialog was opened, keeping the parameters
+	 * and the lines shown: the plan is rebuilt from its own snapshot, so the changes not saved stay not saved
+	 */
+	private void refresh() {
+		stopEditing();
+		readParameters();
+		plan = ResourcePlan.create(project, plan.snapshot());
+		options = plan.getOptions();
+		showParameters();
+		update();
 	}
 
 	private void renameVersion() {
@@ -678,7 +737,12 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		builder.appendSeparator(Messages.getString("ResourcePlan.Effort")); //$NON-NLS-1$
 		JPanel groupHeader = new JPanel(new BorderLayout());
 		groupHeader.add(unitChooser(), BorderLayout.WEST);
-		groupHeader.add(groupColumns.button(), BorderLayout.EAST);
+		JButton refresh = button("ResourcePlan.Refresh", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				refresh();
+			}
+		});
+		groupHeader.add(buttons(refresh, groupColumns.button()), BorderLayout.EAST);
 		builder.append(groupHeader);
 		builder.append(groupScroll);
 		builder.appendSeparator(Messages.getString("ResourcePlan.Lines")); //$NON-NLS-1$
@@ -691,7 +755,12 @@ public final class ResourcePlanDialog extends AbstractDialog {
 		});
 		JPanel lineHeader = new JPanel(new BorderLayout());
 		lineHeader.add(unitChooser(), BorderLayout.WEST);
-		lineHeader.add(buttons(sort, lineColumns.button()), BorderLayout.EAST);
+		JButton export = button("ResourcePlan.Export", new ActionListener() { //$NON-NLS-1$
+			public void actionPerformed(ActionEvent e) {
+				exportPeople();
+			}
+		});
+		lineHeader.add(buttons(sort, export, lineColumns.button()), BorderLayout.EAST);
 		builder.append(lineHeader);
 		builder.append(lineScroll);
 		builder.append(buttons(addLine, addNamed, removeLine, defaultDates));

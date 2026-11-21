@@ -199,7 +199,14 @@ Kết quả: "Deadline sớm nhất ~ dd/mm/yyyy" để propose với khách.
 | RP1 | Hộp thoại Resource Plan (deadline cố định): bảng effort, dòng kế hoạch, tính FTE/số người, kiểm tra khả thi, Apply → resource TBD, đọc lại từ resource |
 | RP2 | Chế độ ngược: deadline sớm nhất |
 | RP3 | Import *NL Phi CN* + bảng map mã đầu việc → role (PM, QA...) |
-| RP4 | Xuất Excel Resource Plan (`XlsxSheetWriter`) |
+| RP4 | Xuất People của Resource Plan theo template kế hoạch nguồn lực của công ty |
+
+### Xuất People ra Excel
+
+- Nút **Xuất Excel** lấy kế hoạch đang hiển thị, kể cả thay đổi chưa lưu; không lưu phiên bản và không áp dụng vào resource.
+- File giữ tiêu đề, 9 cột, định dạng và danh sách chọn của template công ty. Hai dòng ví dụ được thay bằng dữ liệu People.
+- Mỗi named resource là một dòng; mỗi TBD resource được tách thành `getPeople()` dòng, kể cả số người tính tự động. Dòng có 0 người không xuất. Thứ tự theo bảng People.
+- Mã NV, Account và Ghi chú để trống. Role giữ nguyên; Level dùng mã ngắn; ngày kết thúc theo ngày hiển thị; Workload là phần trăm phân bổ (100% ghi 100); Loại onsite là `Không onsite`.
 | sau | Activity Unit test (cột H) + cập nhật Auto Link |
 
 Sau đó: bước 2 Assignment, bước 3 Re-link.
